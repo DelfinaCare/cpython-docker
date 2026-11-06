@@ -111,6 +111,26 @@ if platform.machine() == "x86_64":
     if cflags and cflags not in sysconfig.get_config_var("CFLAGS"):
         fail(f"sysconfig CFLAGS lacks {cflags!r}: {sysconfig.get_config_var('CFLAGS')}")
 
+# --- CPython's build configuration ------------------------------------------
+# The last -O on the command line wins. CPython's own level is -O3; the
+# builder's CFLAGS (-O2) once overrode it.
+py_cflags = sysconfig.get_config_var("PY_CFLAGS") or ""
+opt_levels = re.findall(r"(?<!\S)-O\S*", py_cflags)
+if not opt_levels or opt_levels[-1] != "-O3":
+    fail(f"CPython not compiled at -O3 (effective {opt_levels[-1:] or 'none'}): {py_cflags}")
+if env.get("PYTHON_OPTIMIZE", "true") == "true":
+    config_args = sysconfig.get_config_var("CONFIG_ARGS") or ""
+    nodist = (sysconfig.get_config_var("PY_CFLAGS_NODIST") or "") + " " + \
+        (sysconfig.get_config_var("PY_LDFLAGS_NODIST") or "")
+    for flag in ("--enable-optimizations", "--with-lto"):
+        if flag not in config_args:
+            fail(f"CPython configured without {flag}: {config_args}")
+    for flag in ("-flto", "-fno-semantic-interposition"):
+        if flag not in nodist:
+            fail(f"CPython built without {flag}: {nodist}")
+print(f"CPython build: {opt_levels[-1] if opt_levels else '?'}"
+      + (", PGO + LTO" if env.get("PYTHON_OPTIMIZE", "true") == "true" else ", no PGO/LTO"))
+
 # --- ELF package notes -------------------------------------------------------
 seen = {}
 isa_checked = 0

@@ -35,6 +35,9 @@ target "python" {
     PYTHON_SHA256  = py.sha256
   }
   tags = ["${IMAGE}:${py.version}", "${IMAGE}:${py.minor}"]
+  # Same layer compression as release.yml (applies with --push; --load
+  # replaces the output).
+  output = ["type=image,compression=zstd,compression-level=3,force-compression=true,oci-mediatypes=true"]
 }
 
 target "test" {
