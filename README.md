@@ -466,7 +466,8 @@ What each tool gets:
 
   ```bash
   syft scan <image> --select-catalogers +sbom-cataloger -o syft-json > sbom.json
-  grype sbom:sbom.json --vex vex/zlib.openvex.json --vex vex/util-linux.openvex.json
+  grype sbom:sbom.json --vex vex/zlib.openvex.json --vex vex/util-linux.openvex.json \
+      --vex vex/sqlite.openvex.json
   ```
 
   Every library is matched on its exact NVD CPE. Each source-built library
@@ -503,6 +504,7 @@ as "suppressed by VEX" with `--show-suppressed`.
 | `vex/zlib.openvex.json` | CVE-2026-85091 (`gz_vacate()` heap overflow) | zlib is built `--solo`; `gzwrite.c` isn't compiled in |
 | `vex/util-linux.openvex.json` | CVE-2026-3184 (`login -h` hostname canonicalization) | only libuuid is built from util-linux; `login` is neither compiled nor shipped |
 | `vex/util-linux.openvex.json` | CVE-2026-53613 (restricted `mount` target race, legacy `mount(2)` path) | only libuuid is built from util-linux; neither `mount`/`umount` nor libmount is compiled or shipped, and the base image has none |
+| `vex/sqlite.openvex.json` | CVE-2026-119586 (`.recover` output in the `sqlite3` shell carries injected dot-commands) | only `libsqlite3.so.0` is shipped; the `sqlite3` shell is not, and the library doesn't contain the recover extension |
 
 Rules for adding one:
 
@@ -512,7 +514,9 @@ Rules for adding one:
   For util-linux, the build stage fails if it compiles anything other than
   libuuid, and `tests/check_metadata.py` checks that libuuid is the only
   file it ships and that no `login`, `mount`, `umount` or libmount exists
-  anywhere in the image.
+  anywhere in the image. For SQLite, `tests/check_metadata.py` checks that
+  `libsqlite3.so.*` is the only file it ships, that no `sqlite3` executable
+  exists, and that the library exports no `sqlite3_recover_*` symbols.
 * Use the component's purl without a version as the product
   (`pkg:generic/zlib`), so the statement survives version bumps. Grype
   matches it against both the ELF-note and SBOM entries. Grype didn't match

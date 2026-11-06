@@ -15,6 +15,7 @@ the image:
   X86_64_CFLAGS for building extensions.
 """
 
+import ctypes
 import json
 import os
 import platform
@@ -175,6 +176,21 @@ for top in ("/usr/local/lib", "/usr/lib", "/usr/lib64"):
         for name in files:
             if name.startswith("libmount.so"):
                 fail(f"{os.path.join(root, name)} is present")
+
+# vex/sqlite.openvex.json relies on SQLite contributing nothing but
+# libsqlite3 (no sqlite3 shell), and on the library not containing the
+# recover extension that the shell's .recover command is built on.
+sq = {os.path.basename(p) for p in seen.get("sqlite", ())}
+if not sq or not all(n.startswith("libsqlite3.so.") for n in sq):
+    fail(f"sqlite files other than libsqlite3: {sorted(sq)}")
+for d in ("/usr/local/bin", "/usr/local/sbin", "/usr/bin", "/usr/sbin", "/bin", "/sbin"):
+    if os.path.lexists(os.path.join(d, "sqlite3")):
+        fail(f"{d}/sqlite3 is present")
+libsqlite3 = ctypes.CDLL("/usr/local/lib/libsqlite3.so.0")
+for sym in ("sqlite3_recover_init", "sqlite3_recover_init_sql", "sqlite3_recover_step",
+            "sqlite3_recover_run", "sqlite3_dbdata_init"):
+    if hasattr(libsqlite3, sym):
+        fail(f"libsqlite3 exports {sym} (recover extension compiled in)")
 print(f"ELF notes: {sum(map(len, seen.values()))} files across {len(seen)} components")
 if isa_level is not None:
     print(f"x86-64-v{isa_level} ISA marker: {isa_checked} files")

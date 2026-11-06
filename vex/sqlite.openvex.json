@@ -1,0 +1,22 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "urn:uuid:69fcb8f4-6ba8-49d2-87e1-3d1f04fa0deb",
+  "author": "Delfina",
+  "timestamp": "2026-11-06T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-119586"
+      },
+      "products": [
+        {
+          "@id": "pkg:generic/sqlite"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the sqlite3 command-line shell's .recover command (src/shell.c.in, using the recover extension in ext/recover/sqlite3recover.c). This image ships only libsqlite3.so.0, built from the autoconf amalgamation: the sqlite3 shell is removed with the rest of /usr/local/bin, and the recover extension is not part of the library. tests/check_metadata.py fails if SQLite contributes any file other than libsqlite3.so.*, if a sqlite3 executable is present, or if libsqlite3 exports any sqlite3_recover_* or sqlite3_dbdata_init symbol."
+    }
+  ]
+}
