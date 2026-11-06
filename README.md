@@ -319,31 +319,6 @@ image digests and every pinned version. If the workflow fails before
 publishing, re-running it replaces the leftover draft; a published release
 is never modified.
 
-### Repository settings
-
-* **Immutable releases**: Settings → General → Releases. Tags of published
-  releases can then never move, and their assets never change.
-* **Arm64 runners**: `ubuntu-24.04-arm` is free for public repositories.
-  Private repositories need arm64 larger runners (check GitHub's current
-  runner docs); change `runner` in `.github/scripts/plan.sh` to match.
-* **CPU baseline**: the amd64 images target x86-64-v3, and the build runs
-  CPython's test suite for PGO, so x86 runners need AVX2. GitHub-hosted x86
-  runners have it; self-hosted ones must too.
-* **GHCR**: the first release creates the package as private. Make it
-  public under the package's settings if you want it to be. The
-  `org.opencontainers.image.source` label links it to this repository.
-  Pushing uses `GITHUB_TOKEN` (`packages: write`); nothing to configure.
-* **Updater PRs**: pull requests opened with `GITHUB_TOKEN` don't trigger the
-  Test workflow. Create a GitHub App with contents and pull-requests write
-  access, install it on the repository, and set the variable
-  `UPDATER_APP_CLIENT_ID` and the secret `UPDATER_APP_PRIVATE_KEY`. Without
-  them, enable "Allow GitHub Actions to create and approve pull requests"
-  (Settings → Actions → General), and run the tests on those PRs by hand.
-* **Docker Hub** (optional): set the secrets `DOCKERHUB_USERNAME` and
-  `DOCKERHUB_TOKEN` (a read-only token) so the updater and `--verify-pins`
-  don't hit Docker Hub's anonymous rate limit when checking the base image.
-* **Branch protection**: require the Test workflow's checks on `main`.
-
 ### PR caching
 
 The Test workflow caches in the GitHub Actions cache, with one scope per
@@ -566,8 +541,4 @@ the distroless base. Each image carries them:
 For the GPL components, those `SOURCE` files, the patches and the build
 scripts at the recorded commit are the directions to the Corresponding
 Source (GPLv3 section 6(d)). The archives themselves stay on their upstream
-servers (ftp.gnu.org), which keep old releases. If one ever disappeared,
-you'd have to provide that source yourself. GitHub's automatic "Source
-code" archives on each release contain only this repository, not the
-upstream sources. `tests/check_metadata.py` fails the build if a component
-is missing its license text or `SOURCE` file.
+servers (ftp.gnu.org), which keep old releases.
