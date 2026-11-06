@@ -560,11 +560,11 @@ EOF
 FROM builder AS python
 ARG PYTHON_VERSION
 ARG PYTHON_SHA256
-ARG PYTHON_OPTIMIZE
-ARG PYTHON_CONFIGURE_EXTRA
 
 # Fetch and unpack the source before pulling in the dependencies, so a
-# dependency bump doesn't redo this step.
+# dependency bump doesn't redo this step. (Same for the build-option ARGs
+# below: every RUN after an ARG is invalidated when its value changes, used
+# or not.)
 ENV SRC_URL=https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tar.xz
 ADD --checksum=sha256:${PYTHON_SHA256} ${SRC_URL} /tmp/src.tar.xz
 RUN tar -xf /tmp/src.tar.xz --strip-components=1 && rm /tmp/src.tar.xz
@@ -583,6 +583,8 @@ COPY --from=readline  /out/ /
 COPY --from=gdbm      /out/ /
 COPY --from=libuuid   /out/ /
 
+ARG PYTHON_OPTIMIZE
+ARG PYTHON_CONFIGURE_EXTRA
 RUN --mount=type=cache,id=ccache,target=/root/.cache/ccache <<EOF
 set -eux
 ldconfig
