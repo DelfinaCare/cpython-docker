@@ -21,10 +21,10 @@
 # runtime image's glibc, so the runtime's glibc can't be older.
 #
 # BUILD_IMAGE: toolchain only, never shipped.
-ARG BUILD_IMAGE=debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+ARG BUILD_IMAGE=debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 # RUNTIME_IMAGE: glibc + /etc basics, no shell, no OpenSSL. Bump the digest to
 # pick up glibc security fixes.
-ARG RUNTIME_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:ca1c7e6a875e59345ae6ff182a1e0930f0ca1ffef23a9b830f8823ab348ad5dd
+ARG RUNTIME_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:d710a5c8bfe4cf7e726d7e1afd73e363a9fb02c2a11ad893d2d6185c1b9a89cb
 
 # ---- CPU baseline -----------------------------------------------------------
 # Extra compiler/linker flags for linux/amd64 only (arm64 builds use the
@@ -50,18 +50,18 @@ ARG PYTHON_OPTIMIZE=true
 ARG PYTHON_CONFIGURE_EXTRA=""
 
 # ---- pip (installed from the wheel, independent of the CPython build) -------
-ARG PIP_VERSION=26.2.2
-ARG PIP_SHA256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70
+ARG PIP_VERSION=26.3
+ARG PIP_SHA256=f3b60b20ffaadd4415ed7957212a38ac63fa4c5fa375bd0f4a797777940fad13
 
 # ---- CA certificates (Mozilla bundle, as published by curl.se) --------------
-ARG CACERT_DATE=2026-10-20
-ARG CACERT_SHA256=796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe
+ARG CACERT_DATE=2026-11-05
+ARG CACERT_SHA256=427c064216761a1e72a8b30f0d954d08cb6e4435a82091fb865afd20c8497285
 
 # ---- C library dependencies -------------------------------------------------
 ARG OPENSSL_VERSION=3.5.9
 ARG OPENSSL_SHA256=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
-ARG ZLIB_VERSION=1.3.2
-ARG ZLIB_SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
+ARG ZLIB_VERSION=1.4
+ARG ZLIB_SHA256=02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584
 ARG BZIP2_VERSION=1.0.8
 ARG BZIP2_SHA256=ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269
 ARG XZ_VERSION=5.8.4
@@ -75,8 +75,8 @@ ARG LIBFFI_SHA256=7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0d
 ARG SQLITE_VERSION=3540100
 ARG SQLITE_YEAR=2026
 ARG SQLITE_SHA256=926ef8d3eab93fbf6e06011901273eec076b25594a4e1cdadd50c987f4f6d64e
-ARG EXPAT_VERSION=2.9.0
-ARG EXPAT_SHA256=1e6371862cc31999b368c3b89b49994f0677e1bab5f1b2b85ae3741f5d803051
+ARG EXPAT_VERSION=2.10.0
+ARG EXPAT_SHA256=c624ba2998fc65df1163a49641ff3f9ab73138b11641d92c86bee0fb01b1bc7f
 ARG MPDECIMAL_VERSION=4.0.1
 ARG MPDECIMAL_SHA256=96d33abb4bb0070c7be0fed4246cd38416188325f820468214471938545b1ac8
 ARG NCURSES_VERSION=6.6
