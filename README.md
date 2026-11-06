@@ -374,6 +374,36 @@ cd scripts && pip-compile --generate-hashes --allow-unsafe --strip-extras \
   it exports the intermediate dependency stages too. Cache mounts (ccache,
   apt) are not exported; they only help on persistent builders.
 
+## Optimization
+
+* **CPython** is built with PGO and LTO (`--enable-optimizations --with-lto`),
+  which is CPython's documented recommendation for best performance. With
+  GCC, configure then also adds `-fno-semantic-interposition`, which matters
+  because libpython is a shared library here. CPython compiles at its own
+  `-O3`. The builder's `CFLAGS` carry `-O2`, which is dropped for CPython
+  because a later `-O` would override CPython's. `tests/check_metadata.py`
+  checks the effective level and, for optimized builds, that PGO and LTO
+  were really used.
+* **Libraries** build at their upstream's chosen level: `-O3` for OpenSSL,
+  zlib, zstd and libffi; `-O2` (the autoconf default) for the rest. Setting
+  `CFLAGS` replaces those defaults, so the builder passes `-O2` and the
+  `-O3` projects' stages raise it.
+* Not used: `--enable-bolt` (documented as experimental) and
+  `--with-tail-call-interp`, which needs Clang 19+ while everything here
+  builds with Debian's GCC.
+
+### Image compression
+
+Release images are pushed with **zstd level 3** layer compression
+(`compression=zstd,compression-level=3,force-compression=true`, with OCI
+media types). That's set in `release.yml`, and in `docker-bake.hcl` for
+`bake --push`. `force-compression` re-compresses the distroless base layers
+too, so every layer is zstd. For linux/amd64 that makes the image about
+21% smaller than with gzip (28.7 MB vs 36.1 MB compressed), and zstd is
+generally faster to decompress. To pull them you need Docker Engine 23+ or containerd
+1.5+ (and a recent Podman, Kubernetes runtime or scanner). Older clients
+can't pull the image.
+
 ## Build args for CPython and the CPU baseline
 
 | Arg                      | Default | Meaning                                  |

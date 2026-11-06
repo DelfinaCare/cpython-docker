@@ -110,6 +110,11 @@ RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
       pkgconf \
       xz-utils
 
+# CFLAGS carries -O2 because autoconf projects drop their own -O when CFLAGS
+# is set. Stages whose upstream default is higher (OpenSSL, zlib, zstd,
+# libffi: -O3) or that pick their own level (CPython) adjust it, so every
+# component builds at the optimization level its upstream chose.
+#
 # Everything is installed into /usr/local. Each stage installs with
 # DESTDIR=/out; later stages COPY a dependency's /out into their own /.
 # The rpath makes every library and extension module find our copies in
@@ -249,6 +254,8 @@ ENV SRC_URL=https://github.com/openssl/openssl/releases/download/openssl-${OPENS
 ADD --checksum=sha256:${OPENSSL_SHA256} ${SRC_URL} /tmp/src.tar.gz
 RUN --mount=type=cache,id=ccache,target=/root/.cache/ccache <<EOF
 set -eux
+# Upstream builds with -O3, but setting CFLAGS replaces its default.
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-O2/-O3/')"
 tar -xf /tmp/src.tar.gz --strip-components=1
 # --openssldir=/etc/ssl: default CA paths are /etc/ssl/cert.pem and
 # /etc/ssl/certs, which is where the runtime image puts the CA bundle.
@@ -270,6 +277,8 @@ ENV SRC_URL=https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zl
 ADD --checksum=sha256:${ZLIB_SHA256} ${SRC_URL} /tmp/src.tar.gz
 RUN --mount=type=cache,id=ccache,target=/root/.cache/ccache <<EOF
 set -eux
+# Upstream builds with -O3, but setting CFLAGS replaces its default.
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-O2/-O3/')"
 tar -xf /tmp/src.tar.gz --strip-components=1
 # --solo (Z_SOLO) leaves out the gz* file API (gzread.c, gzwrite.c, ...),
 # compress()/uncompress(), and zlib's default allocator. CPython uses none of
@@ -346,6 +355,8 @@ ENV SRC_URL=https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/
 ADD --checksum=sha256:${ZSTD_SHA256} ${SRC_URL} /tmp/src.tar.gz
 RUN --mount=type=cache,id=ccache,target=/root/.cache/ccache <<EOF
 set -eux
+# Upstream builds with -O3, but setting CFLAGS replaces its default.
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-O2/-O3/')"
 tar -xf /tmp/src.tar.gz --strip-components=1
 make -j"$(nproc)" -C lib lib-mt PREFIX=/usr/local
 make -C lib install-pc install-includes install-shared PREFIX=/usr/local DESTDIR=/out
@@ -362,6 +373,8 @@ ENV SRC_URL=https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION
 ADD --checksum=sha256:${LIBFFI_SHA256} ${SRC_URL} /tmp/src.tar.gz
 RUN --mount=type=cache,id=ccache,target=/root/.cache/ccache <<EOF
 set -eux
+# Upstream builds with -O3, but setting CFLAGS replaces its default.
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-O2/-O3/')"
 tar -xf /tmp/src.tar.gz --strip-components=1
 ./configure --prefix=/usr/local --disable-static --disable-docs \
     --disable-multi-os-directory
@@ -577,6 +590,9 @@ opt=""
 if [ "$PYTHON_OPTIMIZE" = "true" ]; then
   opt="--enable-optimizations --with-lto"
 fi
+# CPython chooses its own optimization level (-O3, in OPT); the builder's -O2
+# would come later on the command line and override it.
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-O2 *//')"
 # py_cv_module__tkinter=n/a: never build tkinter, even if Tk is found.
 ./configure \
     --prefix=/usr/local \
@@ -813,6 +829,7 @@ ARG UTIL_LINUX_VERSION
 ARG CACERT_DATE
 ARG X86_64_CFLAGS
 ARG X86_64_LDFLAGS
+ARG PYTHON_OPTIMIZE
 COPY tests/ /tests/
 # Exec form: there is no /bin/sh in the runtime image.
 RUN ["python3", "-I", "/tests/check_libs.py"]
