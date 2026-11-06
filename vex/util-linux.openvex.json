@@ -1,0 +1,35 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "urn:uuid:808bf0f4-7a7c-4f3d-935a-3b72adc01537",
+  "author": "Delfina",
+  "timestamp": "2026-11-06T00:00:00Z",
+  "version": 3,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-3184"
+      },
+      "products": [
+        {
+          "@id": "pkg:generic/util-linux"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the login(1) program (login-utils/login.c). This image builds util-linux with --disable-all-programs --enable-libuuid and ships only libuuid.so.1. The libuuid build stage fails if any object outside libuuid/ and its lib/ helpers is compiled, and tests/check_metadata.py fails if util-linux contributes any file other than libuuid.so.* or if a login binary is present."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-53613"
+      },
+      "products": [
+        {
+          "@id": "pkg:generic/util-linux"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the restricted (non-root) path of the mount(8) program and libmount's legacy mount(2) fallback (sys-utils/mount.c, libmount/). This image builds util-linux with --disable-all-programs --enable-libuuid and ships only libuuid.so.1; neither mount, umount nor libmount is compiled, and the distroless base ships none of them. The libuuid build stage fails if any object outside libuuid/ and its lib/ helpers is compiled, and tests/check_metadata.py fails if a mount or umount binary or a libmount library is present."
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "urn:uuid:20707313-e483-4bda-9101-924d2e416fce",
+  "author": "Delfina",
+  "timestamp": "2026-11-06T00:00:00Z",
+  "version": 2,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-85091"
+      },
+      "products": [
+        {
+          "@id": "pkg:generic/zlib"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The vulnerable function, gz_vacate(), is in zlib's gzwrite.c. This image builds zlib with ./configure --solo (Z_SOLO), which compiles none of the gz* file API into libz.so.1. tests/smoke_test.py fails the build if gzopen, gzwrite or gzread are exported."
+    }
+  ]
+}

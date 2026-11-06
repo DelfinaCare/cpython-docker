@@ -1,0 +1,160 @@
+# Runs scripts/update-deps.py daily and opens (or updates) a pull request
+# with whatever it changed. Key refreshes get their own pull request, since
+# changing what we trust deserves its own review.
+#
+# Pull requests opened with the default GITHUB_TOKEN don't trigger other
+# workflows, so the Test workflow wouldn't run on them. To fix that, create a
+# GitHub App with contents and pull-requests write access, install it on this
+# repository, and set:
+#   vars.UPDATER_APP_CLIENT_ID       the App's client ID
+#   secrets.UPDATER_APP_PRIVATE_KEY  a private key for the App
+# Without them the workflow falls back to GITHUB_TOKEN, which also requires
+# "Allow GitHub Actions to create and approve pull requests" in the
+# repository's Actions settings.
+name: Update dependencies
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: update-deps
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        if: vars.UPDATER_APP_CLIENT_ID != ''
+        with:
+          client-id: ${{ vars.UPDATER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.UPDATER_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+      - run: pip install --require-hashes -r scripts/requirements.txt
+
+      # Exit status 2 means some dependencies failed to update or verify; the
+      # rest are still worth a pull request, so open it, then fail the run.
+      - name: Run the updater
+        id: update
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set +e
+          python scripts/update-deps.py > "$RUNNER_TEMP/update.txt" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/update.txt"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          {
+            echo "Automated run of \`scripts/update-deps.py\`. Every updated download was"
+            echo "verified against its pinned signer and/or upstream checksum; see below."
+            echo
+            echo "Before merging: check that the statements in \`vex/\` still hold for the"
+            echo "new versions, and that the Test workflow passed."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/update.txt"
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.app-token.outputs.token || github.token }}
+          branch: automation/update-deps
+          delete-branch: true
+          add-paths: |
+            Dockerfile
+            docker-bake.hcl
+            patches/readline/
+          commit-message: Update pinned dependencies
+          title: Update pinned dependencies
+          body-path: ${{ runner.temp }}/body.md
+          labels: dependencies
+
+      - name: Fail if some dependencies couldn't be updated
+        if: steps.update.outputs.status != '0'
+        env:
+          STATUS: ${{ steps.update.outputs.status }}
+        run: |
+          echo "::error::update-deps.py exited with status $STATUS; see the 'Run the updater' step"
+          exit 1
+
+  refresh-keys:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        if: vars.UPDATER_APP_CLIENT_ID != ''
+        with:
+          client-id: ${{ vars.UPDATER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.UPDATER_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Rewrites keys/<project>.asc when a pinned key gains a subkey, a new
+      # expiry date or a revocation. It never changes the pinned
+      # fingerprints; exit status 1 means a source no longer has a pinned
+      # key, or python.org's Sigstore identities differ from keys/trust.json.
+      - name: Refresh pinned signing keys
+        id: refresh
+        run: |
+          set +e
+          python3 scripts/update-deps.py --refresh-keys > "$RUNNER_TEMP/refresh.txt" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/refresh.txt"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          {
+            echo "Automated run of \`scripts/update-deps.py --refresh-keys\`. The pinned"
+            echo "fingerprints in \`keys/trust.json\` are unchanged; this only updates the"
+            echo "key material (subkeys, expiry dates, revocations) from each key's source."
+            echo
+            echo "Review the changes below before merging: a new signing subkey or a"
+            echo "revocation is a change in what this repository trusts."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/refresh.txt"
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.app-token.outputs.token || github.token }}
+          branch: automation/refresh-keys
+          delete-branch: true
+          add-paths: keys/*.asc
+          commit-message: Refresh pinned signing keys
+          title: Refresh pinned signing keys
+          body-path: ${{ runner.temp }}/body.md
+          labels: security
+
+      - name: Fail if a key or identity needs attention
+        if: steps.refresh.outputs.status != '0'
+        env:
+          STATUS: ${{ steps.refresh.outputs.status }}
+        run: |
+          echo "::error::--refresh-keys exited with status $STATUS; see the 'Refresh pinned signing keys' step"
+          exit 1

@@ -1,0 +1,297 @@
+# Builds and publishes a release when a tag like v2026.10.29 is pushed.
+#
+#   plan     reads the CPython versions and platforms from docker-bake.hcl
+#   build    one job per CPython version x platform, each on a native runner
+#            (no QEMU): build with no cache, push by digest, test, SBOM
+#   merge    one job per CPython version: combine the per-platform images
+#            into one multi-arch image and tag it
+#   release  collect every job's SBOMs into a single GitHub release
+#
+# Nothing is tagged until every platform of a version has built and passed
+# its tests. The GitHub release is created as a draft, filled, and only then
+# published, so it works with immutable releases (assets can't be added
+# after publishing).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SYFT_VERSION: v1.55.0
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      pythons: ${{ steps.plan.outputs.pythons }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      image: ${{ steps.image.outputs.image }}
+      release: ${{ steps.image.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: plan
+        run: bash .github/scripts/plan.sh >> "$GITHUB_OUTPUT"
+      - id: image
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Registry names must be lowercase; owners often aren't.
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "release=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    name: build ${{ matrix.version }} ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      IMAGE: ${{ needs.plan.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The release image is built from scratch: no-cache, and no cache
+      # import of any kind. It's pushed by digest only; tags come later, in
+      # `merge`, once every platform has passed its tests.
+      - name: Build and push by digest (no cache)
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: runtime
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            PYTHON_VERSION=${{ matrix.version }}
+            PYTHON_SHA256=${{ matrix.sha256 }}
+            SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
+            SOURCE_REVISION=${{ github.sha }}
+          no-cache: true
+          pull: true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ matrix.version }}
+            org.opencontainers.image.title=python
+            org.opencontainers.image.description=CPython ${{ matrix.version }} and its C libraries built from source on distroless
+          provenance: mode=max
+          sbom: true
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      # Runs the test stage on top of the image just built. The only cache it
+      # can use is the layers produced by the step above, in this job, so it
+      # tests exactly what was pushed.
+      - name: Test
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: test
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            PYTHON_VERSION=${{ matrix.version }}
+            PYTHON_SHA256=${{ matrix.sha256 }}
+            SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
+            SOURCE_REVISION=${{ github.sha }}
+          outputs: type=cacheonly
+
+      - id: syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: ${{ env.SYFT_VERSION }}
+
+      # +sbom-cataloger also reads the per-library SBOMs embedded in the
+      # image (/usr/local/share/sbom), which carry each library's exact CPE.
+      - name: SBOM
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+          NAME: python-${{ matrix.version }}-${{ matrix.arch }}
+        run: |
+          mkdir -p sbom
+          "$SYFT" scan "registry:${IMAGE}@${DIGEST}" --platform "$PLATFORM" \
+            --select-catalogers +sbom-cataloger \
+            -o "spdx-json=sbom/${NAME}.spdx.json" \
+            -o "cyclonedx-json=sbom/${NAME}.cdx.json"
+
+      - name: Record digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-${{ matrix.minor }}-${{ matrix.arch }}
+          path: digests/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ matrix.minor }}-${{ matrix.arch }}
+          path: sbom/*
+          if-no-files-found: error
+          retention-days: 7
+
+  merge:
+    needs: [plan, build]
+    name: tag ${{ matrix.python.version }}
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ${{ fromJSON(needs.plan.outputs.pythons) }}
+    env:
+      IMAGE: ${{ needs.plan.outputs.image }}
+      RELEASE: ${{ needs.plan.outputs.release }}
+      VERSION: ${{ matrix.python.version }}
+      MINOR: ${{ matrix.python.minor }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digests-${{ matrix.python.minor }}-*
+          path: digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags: 3.14.10 and 3.14 move with each release; 3.14.10-<release>
+      # (e.g. 3.14.10-2026.10.29) is never reused, so it can be pinned.
+      - name: Create multi-arch image and tags
+        working-directory: digests
+        env:
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          sources=()
+          for digest in *; do
+            sources+=("${IMAGE}@sha256:${digest}")
+          done
+          docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.source=${SOURCE}" \
+            --annotation "index:org.opencontainers.image.version=${VERSION}" \
+            -t "${IMAGE}:${VERSION}-${RELEASE}" \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:${MINOR}" \
+            "${sources[@]}"
+
+      - name: Record the multi-arch digest
+        run: |
+          mkdir -p ../index
+          digest=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}-${RELEASE}" \
+                     --format '{{json .Manifest}}' | jq -r .digest)
+          echo "${IMAGE}:${VERSION}-${RELEASE}@${digest}" > "../index/${MINOR}"
+          docker buildx imagetools inspect "${IMAGE}@${digest}"
+        working-directory: digests
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: index-${{ matrix.python.minor }}
+          path: index/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # Collects every build's outputs and publishes them as one GitHub release.
+  release:
+    needs: [plan, merge]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sbom-*
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: index-*
+          path: index
+          merge-multiple: true
+
+      - name: Assemble release assets and notes
+        run: |
+          cp vex/*.openvex.json dist/
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          {
+            echo "## Images"
+            echo
+            echo "Multi-arch (linux/amd64, linux/arm64). Pin by digest:"
+            echo
+            echo '```'
+            cat index/*
+            echo '```'
+            echo
+            echo "## Pinned components (shared by every image above)"
+            echo
+            echo "| Build arg | Value |"
+            echo "|-----------|-------|"
+            # shellcheck disable=SC2016  # the backticks are Markdown
+            grep -E '^ARG [A-Z0-9_]+_(VERSION|DATE)=' Dockerfile \
+              | grep -v '^ARG PYTHON_' \
+              | sed -E 's/^ARG ([A-Z0-9_]+)=(.*)$/| `\1` | \2 |/'
+            echo
+            echo "## Assets"
+            echo
+            echo "- \`python-<version>-<arch>.spdx.json\` / \`.cdx.json\`: SBOM of each image, from Syft, including the per-library SBOMs embedded in the image."
+            echo "- \`*.openvex.json\`: VEX statements for CVEs that don't apply to these builds; pass them to Grype with \`--vex\`."
+            echo "- \`SHA256SUMS\`: checksums of the assets above."
+          } > notes.md
+          cat notes.md
+
+      # Draft, upload, then publish: an immutable release can't gain assets
+      # after it's published. A draft left by an earlier failed attempt is
+      # replaced; a published release is never touched.
+      - name: Publish release
+        run: |
+          if state=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$state" != "true" ]; then
+              echo "::error::release $TAG is already published"
+              exit 1
+            fi
+            gh release delete "$TAG" --yes
+          fi
+          gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file notes.md
+          gh release upload "$TAG" dist/*
+          gh release edit "$TAG" --draft=false
