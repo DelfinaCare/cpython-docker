@@ -24,7 +24,7 @@
 ARG BUILD_IMAGE=debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 # RUNTIME_IMAGE: glibc + /etc basics, no shell, no OpenSSL. Bump the digest to
 # pick up glibc security fixes.
-ARG RUNTIME_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:d710a5c8bfe4cf7e726d7e1afd73e363a9fb02c2a11ad893d2d6185c1b9a89cb
+ARG RUNTIME_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:3a2dbf10c2fdafe5865e2b03a4a3b9b23f2e280229a81730415379b76dc70592
 
 # ---- CPU baseline -----------------------------------------------------------
 # Extra compiler/linker flags for linux/amd64 only (arm64 builds use the
@@ -68,8 +68,8 @@ ARG XZ_VERSION=5.8.4
 ARG XZ_SHA256=4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b
 ARG ZSTD_VERSION=1.5.7
 ARG ZSTD_SHA256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
-ARG LIBFFI_VERSION=3.8.0
-ARG LIBFFI_SHA256=7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4
+ARG LIBFFI_VERSION=3.8.1
+ARG LIBFFI_SHA256=81e879c094cc5ec3186c48510c6385ac6b3e866192e8bc71a35245703757ee40
 # SQLite tarballs are named by an encoded version (3.54.1 -> 3540100) and live
 # under a per-year directory.
 ARG SQLITE_VERSION=3540100
