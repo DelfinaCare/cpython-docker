@@ -220,6 +220,16 @@ check("pip version", r.stdout.startswith(f"pip {env['PIP_VERSION']} "), r.stdout
 r = subprocess.run(["python", "-c", "print('hi')"], capture_output=True, text=True)
 check("`python` alias", r.stdout == "hi\n")
 
+# --- Shell: only in the -dbg image -------------------------------------------
+variant = env.get("RUNTIME_VARIANT", "release")
+if variant == "debug":
+    r = subprocess.run(["sh", "-c", "echo hi"], capture_output=True, text=True)
+    check("debug image has a shell", r.stdout == "hi\n", r.stderr.strip())
+    check("os.system works", os.system("exit 0") == 0)
+else:
+    check("release image has no shell",
+          not any(os.path.exists(p) for p in ("/bin/sh", "/busybox/sh")))
+
 print()
 if failures:
     print(f"{len(failures)} check(s) failed: {failures}")

@@ -34,6 +34,7 @@ jobs:
     outputs:
       pythons: ${{ steps.plan.outputs.pythons }}
       matrix: ${{ steps.plan.outputs.matrix }}
+      merges: ${{ steps.plan.outputs.merges }}
       image: ${{ steps.image.outputs.image }}
       release: ${{ steps.image.outputs.release }}
     steps:
@@ -52,7 +53,7 @@ jobs:
 
   build:
     needs: plan
-    name: build ${{ matrix.version }} ${{ matrix.platform }}
+    name: build ${{ matrix.version }}${{ matrix.suffix }} ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -88,6 +89,7 @@ jobs:
           build-args: |
             PYTHON_VERSION=${{ matrix.version }}
             PYTHON_SHA256=${{ matrix.sha256 }}
+            RUNTIME_VARIANT=${{ matrix.variant }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
             SOURCE_REVISION=${{ github.sha }}
           no-cache: true
@@ -95,9 +97,9 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ matrix.version }}
+            org.opencontainers.image.version=${{ matrix.version }}${{ matrix.suffix }}
             org.opencontainers.image.title=python
-            org.opencontainers.image.description=CPython ${{ matrix.version }} and its C libraries built from source on distroless
+            org.opencontainers.image.description=CPython ${{ matrix.version }} and its C libraries built from source on distroless${{ matrix.variant == 'debug' && ' (debug variant, with a busybox shell)' || '' }}
           provenance: mode=max
           sbom: true
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
@@ -114,6 +116,7 @@ jobs:
           build-args: |
             PYTHON_VERSION=${{ matrix.version }}
             PYTHON_SHA256=${{ matrix.sha256 }}
+            RUNTIME_VARIANT=${{ matrix.variant }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
             SOURCE_REVISION=${{ github.sha }}
           outputs: type=cacheonly
@@ -130,7 +133,7 @@ jobs:
           SYFT: ${{ steps.syft.outputs.cmd }}
           DIGEST: ${{ steps.push.outputs.digest }}
           PLATFORM: ${{ matrix.platform }}
-          NAME: python-${{ matrix.version }}-${{ matrix.arch }}
+          NAME: python-${{ matrix.version }}${{ matrix.suffix }}-${{ matrix.arch }}
         run: |
           mkdir -p sbom
           "$SYFT" scan "registry:${IMAGE}@${DIGEST}" --platform "$PLATFORM" \
@@ -147,37 +150,38 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: digests-${{ matrix.minor }}-${{ matrix.arch }}
+          name: digests-${{ matrix.variant }}-${{ matrix.minor }}-${{ matrix.arch }}
           path: digests/*
           if-no-files-found: error
           retention-days: 7
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sbom-${{ matrix.minor }}-${{ matrix.arch }}
+          name: sbom-${{ matrix.minor }}${{ matrix.suffix }}-${{ matrix.arch }}
           path: sbom/*
           if-no-files-found: error
           retention-days: 7
 
   merge:
     needs: [plan, build]
-    name: tag ${{ matrix.python.version }}
+    name: tag ${{ matrix.python.version }}${{ matrix.python.suffix }}
     runs-on: ubuntu-24.04
     permissions:
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        python: ${{ fromJSON(needs.plan.outputs.pythons) }}
+        python: ${{ fromJSON(needs.plan.outputs.merges) }}
     env:
       IMAGE: ${{ needs.plan.outputs.image }}
       RELEASE: ${{ needs.plan.outputs.release }}
       VERSION: ${{ matrix.python.version }}
       MINOR: ${{ matrix.python.minor }}
+      SUFFIX: ${{ matrix.python.suffix }}
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: digests-${{ matrix.python.minor }}-*
+          pattern: digests-${{ matrix.python.variant }}-${{ matrix.python.minor }}-*
           path: digests
           merge-multiple: true
 
@@ -190,7 +194,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Tags: 3.14.10 and 3.14 move with each release; 3.14.10-<release>
-      # (e.g. 3.14.10-2026.10.29) is never reused, so it can be pinned.
+      # (e.g. 3.14.10-2026.10.29) is never reused, so it can be pinned. The
+      # debug variant (with a shell) adds -dbg to the version part:
+      # 3.14.10-dbg, 3.14-dbg, 3.14.10-dbg-2026.10.29.
       - name: Create multi-arch image and tags
         working-directory: digests
         env:
@@ -203,23 +209,23 @@ jobs:
           docker buildx imagetools create \
             --annotation "index:org.opencontainers.image.source=${SOURCE}" \
             --annotation "index:org.opencontainers.image.version=${VERSION}" \
-            -t "${IMAGE}:${VERSION}-${RELEASE}" \
-            -t "${IMAGE}:${VERSION}" \
-            -t "${IMAGE}:${MINOR}" \
+            -t "${IMAGE}:${VERSION}${SUFFIX}-${RELEASE}" \
+            -t "${IMAGE}:${VERSION}${SUFFIX}" \
+            -t "${IMAGE}:${MINOR}${SUFFIX}" \
             "${sources[@]}"
 
       - name: Record the multi-arch digest
         run: |
           mkdir -p ../index
-          digest=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}-${RELEASE}" \
+          digest=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}${SUFFIX}-${RELEASE}" \
                      --format '{{json .Manifest}}' | jq -r .digest)
-          echo "${IMAGE}:${VERSION}-${RELEASE}@${digest}" > "../index/${MINOR}"
+          echo "${IMAGE}:${VERSION}${SUFFIX}-${RELEASE}@${digest}" > "../index/${MINOR}${SUFFIX}"
           docker buildx imagetools inspect "${IMAGE}@${digest}"
         working-directory: digests
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: index-${{ matrix.python.minor }}
+          name: index-${{ matrix.python.minor }}${{ matrix.python.suffix }}
           path: index/*
           if-no-files-found: error
           retention-days: 7
@@ -274,7 +280,7 @@ jobs:
             echo
             echo "## Assets"
             echo
-            echo "- \`python-<version>-<arch>.spdx.json\` / \`.cdx.json\`: SBOM of each image, from Syft, including the per-library SBOMs embedded in the image."
+            echo "- \`python-<version>[-dbg]-<arch>.spdx.json\` / \`.cdx.json\`: SBOM of each image, from Syft, including the per-library SBOMs embedded in the image."
             echo "- \`*.openvex.json\`: VEX statements for CVEs that don't apply to these builds; pass them to Grype with \`--vex\`."
             echo "- \`SHA256SUMS\`: checksums of the assets above."
           } > notes.md

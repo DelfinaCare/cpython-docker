@@ -4,6 +4,8 @@
 #   docker buildx bake python-3_15        # one version
 #   docker buildx bake test               # smoke tests, native platform
 #
+#   docker buildx bake python-3_15-dbg    # same, with a shell (busybox)
+#
 # C library versions are pinned in the Dockerfile and shared by every CPython
 # version, so their stages are built once and reused across the matrix.
 
@@ -24,30 +26,41 @@ group "default" {
   targets = ["python"]
 }
 
+# Every version is built twice: the shell-less release image and a -dbg image
+# on distroless's :debug base (same contents plus busybox).
+variable "VARIANTS" {
+  default = [
+    { name = "",     base = "release", suffix = "" },
+    { name = "-dbg", base = "debug",   suffix = "-dbg" },
+  ]
+}
+
 target "python" {
-  name      = "python-${replace(py.minor, ".", "_")}"
-  matrix    = { py = PYTHON_RELEASES }
+  name      = "python-${replace(py.minor, ".", "_")}${v.name}"
+  matrix    = { py = PYTHON_RELEASES, v = VARIANTS }
   context   = "."
   target    = "runtime"
   platforms = ["linux/amd64", "linux/arm64"]
   args = {
     PYTHON_VERSION = py.version
     PYTHON_SHA256  = py.sha256
+    RUNTIME_VARIANT = v.base
   }
-  tags = ["${IMAGE}:${py.version}", "${IMAGE}:${py.minor}"]
+  tags = ["${IMAGE}:${py.version}${v.suffix}", "${IMAGE}:${py.minor}${v.suffix}"]
   # Same layer compression as release.yml (applies with --push; --load
   # replaces the output).
   output = ["type=image,compression=zstd,compression-level=3,force-compression=true,oci-mediatypes=true"]
 }
 
 target "test" {
-  name    = "test-${replace(py.minor, ".", "_")}"
-  matrix  = { py = PYTHON_RELEASES }
+  name    = "test-${replace(py.minor, ".", "_")}${v.name}"
+  matrix  = { py = PYTHON_RELEASES, v = VARIANTS }
   context = "."
   target  = "test"
   args = {
     PYTHON_VERSION = py.version
     PYTHON_SHA256  = py.sha256
+    RUNTIME_VARIANT = v.base
   }
   output = ["type=cacheonly"]
 }

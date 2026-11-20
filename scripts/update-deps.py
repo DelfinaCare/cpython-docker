@@ -165,7 +165,9 @@ def build_deps(args, bake_entries, trust):
         deps.append(Dep(name, current, latest, release, display))
 
     # Base images: the "version" is the digest.
-    for name, arg in (("base-build-image", "BUILD_IMAGE"), ("base-runtime-image", "RUNTIME_IMAGE")):
+    for name, arg in (("base-build-image", "BUILD_IMAGE"),
+                      ("base-runtime-image", "RUNTIME_IMAGE"),
+                      ("base-runtime-debug-image", "RUNTIME_DEBUG_IMAGE")):
         image, digest = args[arg].split("@")
         add(name, digest,
             lambda image=image: (registry_digest(image), ""),

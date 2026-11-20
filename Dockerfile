@@ -25,6 +25,13 @@ ARG BUILD_IMAGE=debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601
 # RUNTIME_IMAGE: glibc + /etc basics, no shell, no OpenSSL. Bump the digest to
 # pick up glibc security fixes.
 ARG RUNTIME_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:3a2dbf10c2fdafe5865e2b03a4a3b9b23f2e280229a81730415379b76dc70592
+# RUNTIME_DEBUG_IMAGE: the same base plus a busybox shell (/busybox/sh) and
+# core utilities, for the -dbg images. Keep it on the same Debian release as
+# RUNTIME_IMAGE.
+ARG RUNTIME_DEBUG_IMAGE=gcr.io/distroless/base-nossl-debian13:debug@sha256:2548abf86d3e319cdfd0184dce7417a61087724c94ca29daf9b4bddba677f5f5
+# RUNTIME_VARIANT: "release" (no shell) or "debug" (with a shell). Selects which
+# of the two bases the runtime stage is built on; everything else is identical.
+ARG RUNTIME_VARIANT=release
 
 # ---- CPU baseline -----------------------------------------------------------
 # Extra compiler/linker flags for linux/amd64 only (arm64 builds use the
@@ -738,7 +745,7 @@ EOF
 # =============================================================================
 # runtime: the final image
 # =============================================================================
-# The runtime base has no shell, so this stage is COPY-only: everything is
+# The release base has no shell, so this stage is COPY-only: everything is
 # prepared in the build stages. Every COPY is its own layer and uses --link,
 # so a dependency bump only replaces that dependency's layer plus the CPython
 # and pip layers; all other layers are reused as-is (and stay cached in
@@ -747,7 +754,9 @@ EOF
 # Every library and extension module carries an rpath of /usr/local/lib, so
 # loading never depends on the ld.so.cache; the cache only exists for
 # ctypes.util.find_library().
-FROM ${RUNTIME_IMAGE} AS runtime
+FROM ${RUNTIME_IMAGE} AS runtime-base-release
+FROM ${RUNTIME_DEBUG_IMAGE} AS runtime-base-debug
+FROM runtime-base-${RUNTIME_VARIANT} AS runtime
 
 ENV LANG=C.UTF-8
 
@@ -832,6 +841,7 @@ ARG CACERT_DATE
 ARG X86_64_CFLAGS
 ARG X86_64_LDFLAGS
 ARG PYTHON_OPTIMIZE
+ARG RUNTIME_VARIANT
 COPY tests/ /tests/
 # Exec form: there is no /bin/sh in the runtime image.
 RUN ["python3", "-I", "/tests/check_libs.py"]
