@@ -4,7 +4,7 @@
 #   docker buildx bake python-3_15        # one version
 #   docker buildx bake test               # smoke tests, native platform
 #
-#   docker buildx bake python-3_15-shell    # same, with a shell (busybox)
+#   docker buildx bake python-3_15-shell    # same, with /bin/sh (dash)
 #
 # C library versions are pinned in the Dockerfile and shared by every CPython
 # version, so their stages are built once and reused across the matrix.
@@ -27,7 +27,7 @@ group "default" {
 }
 
 # Every version is built twice: the shell-less release image, and a -shell
-# image that is the release image plus one layer with busybox.
+# image that is the release image plus one layer with /bin/sh (dash).
 variable "VARIANTS" {
   default = [
     { name = "",       variant = "release", target = "runtime",       suffix = "" },

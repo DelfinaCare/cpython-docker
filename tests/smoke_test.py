@@ -226,11 +226,11 @@ if variant == "shell":
     r = subprocess.run(["sh", "-c", "echo hi"], capture_output=True, text=True)
     check("shell image has a shell", r.stdout == "hi\n", r.stderr.strip())
     check("os.system works", os.system("exit 0") == 0)
-    r = subprocess.run(["/bin/sh", "-c", "ls / >/dev/null"], capture_output=True, text=True)
-    check("/bin/sh and applets", r.returncode == 0, r.stderr.strip())
+    check("/bin/sh is dash", os.path.realpath("/bin/sh") == "/usr/bin/dash",
+          os.path.realpath("/bin/sh"))
 else:
     check("release image has no shell",
-          not any(os.path.exists(p) for p in ("/bin/sh", "/usr/bin/busybox")))
+          not any(os.path.lexists(p) for p in ("/bin/sh", "/usr/bin/dash")))
 
 print()
 if failures:

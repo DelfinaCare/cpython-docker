@@ -99,7 +99,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ matrix.version }}${{ matrix.suffix }}
             org.opencontainers.image.title=python
-            org.opencontainers.image.description=CPython ${{ matrix.version }} and its C libraries built from source on distroless${{ matrix.variant == 'shell' && ', with a busybox shell' || '' }}
+            org.opencontainers.image.description=CPython ${{ matrix.version }} and its C libraries built from source on distroless${{ matrix.variant == 'shell' && ', with /bin/sh (dash)' || '' }}
           provenance: mode=max
           sbom: true
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
@@ -195,7 +195,7 @@ jobs:
 
       # Tags: 3.14.10 and 3.14 move with each release; 3.14.10-<release>
       # (e.g. 3.14.10-2026.10.29) is never reused, so it can be pinned. The
-      # shell variant (with busybox) adds -shell to the version part:
+      # shell variant (with /bin/sh) adds -shell to the version part:
       # 3.14.10-shell, 3.14-shell, 3.14.10-shell-2026.10.29.
       - name: Create multi-arch image and tags
         working-directory: digests

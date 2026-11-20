@@ -214,10 +214,10 @@ for name, comp in docs.items():
 print(f"CycloneDX SBOMs: {len(docs)} components")
 
 # --- dpkg records for files copied from the Debian build image ---------------
-# The -shell image (RUNTIME_VARIANT=shell) adds busybox-static.
+# The -shell image (RUNTIME_VARIANT=shell) adds dash.
 debian_pkgs = ["libgcc-s1", "libstdc++6", "libc-bin"]
 if env.get("RUNTIME_VARIANT") == "shell":
-    debian_pkgs.append("busybox-static")
+    debian_pkgs.append("dash")
 status_d = "/var/lib/dpkg/status.d"
 for pkg in debian_pkgs:
     path = os.path.join(status_d, pkg)

@@ -312,9 +312,11 @@ per-platform images into one multi-arch image and tags it:
 | `ghcr.io/<owner>/<repo>:3.14` | latest release of 3.14 (moves) |
 
 Each version is also published as a `-shell` image (the `runtime-shell`
-target): the release image plus one layer with Debian's statically linked
-`busybox-static` (`/bin/sh` and the usual applets), with its dpkg record so
-scanners see it. Every other layer is shared with the release image:
+target): the release image plus one layer with Debian's `dash` as `/bin/sh`,
+taken from the build image with its dpkg record so scanners see it. dash
+needs only libc. It is just a shell: `cd`, `echo`, `test` and the other
+builtins work, but there is no `ls`, `cp`, `rm` or other coreutils. Every
+other layer is shared with the release image:
 
 | Tag | Meaning |
 |-----|---------|
@@ -541,7 +543,7 @@ Rules for adding one:
 * There's no shell, so `docker run image sh` doesn't work, and neither
   does anything that calls `subprocess` with `shell=True` or `os.system()`.
   Use the `-shell` image (`3.14-shell`, etc.) to inspect or debug: it is the
-  same image plus busybox (`docker run -it --entrypoint sh <image>-shell`).
+  same image plus `/bin/sh` (`docker run -it --entrypoint sh <image>-shell`).
   Prefer the release image in production. Build it locally with
   `docker buildx bake python-3_14-shell` (or `--target runtime-shell`).
 * manylinux wheels work. Tested by installing numpy and pyarrow, and
