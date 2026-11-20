@@ -312,15 +312,15 @@ per-platform images into one multi-arch image and tags it:
 | `ghcr.io/<owner>/<repo>:3.14.10` | latest release of 3.14.10 (moves) |
 | `ghcr.io/<owner>/<repo>:3.14` | latest release of 3.14 (moves) |
 
-Each version is also published as a `-dbg` image, built from the same
+Each version is also published as a `-shell` image, built from the same
 Dockerfile on distroless's `:debug` base, so it is identical except that it
 has a busybox shell:
 
 | Tag | Meaning |
 |-----|---------|
-| `ghcr.io/<owner>/<repo>:3.14.10-dbg-2026.10.29` | this release; never reused |
-| `ghcr.io/<owner>/<repo>:3.14.10-dbg` | latest release of 3.14.10 (moves) |
-| `ghcr.io/<owner>/<repo>:3.14-dbg` | latest release of 3.14 (moves) |
+| `ghcr.io/<owner>/<repo>:3.14.10-shell-2026.10.29` | this release; never reused |
+| `ghcr.io/<owner>/<repo>:3.14.10-shell` | latest release of 3.14.10 (moves) |
+| `ghcr.io/<owner>/<repo>:3.14-shell` | latest release of 3.14 (moves) |
 
 Finally, `release` collects every job's SBOMs, the `vex/` statements and a
 `SHA256SUMS` file. It creates the GitHub release **as a draft**, uploads
@@ -540,10 +540,10 @@ Rules for adding one:
 
 * There's no shell, so `docker run image sh` doesn't work, and neither
   does anything that calls `subprocess` with `shell=True` or `os.system()`.
-  Use the `-dbg` image (`3.14-dbg`, etc.) to inspect or debug: it is the same
+  Use the `-shell` image (`3.14-shell`, etc.) to inspect or debug: it is the same
   image on distroless's `:debug` base, which adds busybox (`docker run -it
-  --entrypoint sh <image>-dbg`). Don't use it in production; build it locally
-  with `docker buildx bake python-3_14-dbg`, or with
+  --entrypoint sh <image>-shell`). Don't use it in production; build it locally
+  with `docker buildx bake python-3_14-shell`, or with
   `--build-arg RUNTIME_VARIANT=debug`.
 * manylinux wheels work. Tested by installing numpy and pyarrow, and
   raising a C++ exception through pyarrow. On plain `base-nossl`, both fail

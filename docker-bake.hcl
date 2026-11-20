@@ -4,7 +4,7 @@
 #   docker buildx bake python-3_15        # one version
 #   docker buildx bake test               # smoke tests, native platform
 #
-#   docker buildx bake python-3_15-dbg    # same, with a shell (busybox)
+#   docker buildx bake python-3_15-shell    # same, with a shell (busybox)
 #
 # C library versions are pinned in the Dockerfile and shared by every CPython
 # version, so their stages are built once and reused across the matrix.
@@ -26,12 +26,12 @@ group "default" {
   targets = ["python"]
 }
 
-# Every version is built twice: the shell-less release image and a -dbg image
+# Every version is built twice: the shell-less release image and a -shell image
 # on distroless's :debug base (same contents plus busybox).
 variable "VARIANTS" {
   default = [
-    { name = "",     base = "release", suffix = "" },
-    { name = "-dbg", base = "debug",   suffix = "-dbg" },
+    { name = "",       base = "release", suffix = "" },
+    { name = "-shell", base = "debug",   suffix = "-shell" },
   ]
 }
 

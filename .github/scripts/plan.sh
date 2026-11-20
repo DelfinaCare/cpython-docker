@@ -4,13 +4,13 @@
 # truth for CPython versions and platforms:
 #
 #   pythons=[{"minor":"3.14","version":"3.14.10","sha256":"..."}, ...]
-#   merges=[{"minor":"3.14","version":"3.14.10","variant":"debug","suffix":"-dbg"}, ...]
-#   matrix={"include":[{<python fields>,"variant":"release"|"debug","suffix":""|"-dbg",
+#   merges=[{"minor":"3.14","version":"3.14.10","variant":"debug","suffix":"-shell"}, ...]
+#   matrix={"include":[{<python fields>,"variant":"release"|"debug","suffix":""|"-shell",
 #                       "platform":"linux/amd64","arch":"amd64",
 #                       "runner":"ubuntu-24.04"}, ...]}
 #
 # Every CPython version is built as the shell-less release image and as the
-# -dbg image (variants come from RUNTIME_VARIANT in the bake targets).
+# -shell image (variants come from RUNTIME_VARIANT in the bake targets).
 #
 # Each platform builds natively on its own runner (no QEMU).
 set -euo pipefail
@@ -30,7 +30,7 @@ matrix=$(jq -c --argjson pythons "$pythons" '
   | ([.target[].args.RUNTIME_VARIANT] | unique) as $variants
   | {include: [$pythons[] as $py | $variants[] as $v | $platforms[] as $p
       | $py + {variant: $v,
-               suffix: (if $v == "release" then "" else "-dbg" end),
+               suffix: (if $v == "release" then "" else "-shell" end),
                platform: $p,
                arch: ($p | split("/")[1]),
                runner: ($runners[$p] // error("no runner for \($p)"))}]}' <<<"$bake")

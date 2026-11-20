@@ -26,7 +26,7 @@ ARG BUILD_IMAGE=debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601
 # pick up glibc security fixes.
 ARG RUNTIME_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:3a2dbf10c2fdafe5865e2b03a4a3b9b23f2e280229a81730415379b76dc70592
 # RUNTIME_DEBUG_IMAGE: the same base plus a busybox shell (/busybox/sh) and
-# core utilities, for the -dbg images. Keep it on the same Debian release as
+# core utilities, for the -shell images. Keep it on the same Debian release as
 # RUNTIME_IMAGE.
 ARG RUNTIME_DEBUG_IMAGE=gcr.io/distroless/base-nossl-debian13:debug@sha256:2548abf86d3e319cdfd0184dce7417a61087724c94ca29daf9b4bddba677f5f5
 # RUNTIME_VARIANT: "release" (no shell) or "debug" (with a shell). Selects which

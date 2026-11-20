@@ -195,8 +195,8 @@ jobs:
 
       # Tags: 3.14.10 and 3.14 move with each release; 3.14.10-<release>
       # (e.g. 3.14.10-2026.10.29) is never reused, so it can be pinned. The
-      # debug variant (with a shell) adds -dbg to the version part:
-      # 3.14.10-dbg, 3.14-dbg, 3.14.10-dbg-2026.10.29.
+      # debug variant (with a shell) adds -shell to the version part:
+      # 3.14.10-shell, 3.14-shell, 3.14.10-shell-2026.10.29.
       - name: Create multi-arch image and tags
         working-directory: digests
         env:
@@ -280,7 +280,7 @@ jobs:
             echo
             echo "## Assets"
             echo
-            echo "- \`python-<version>[-dbg]-<arch>.spdx.json\` / \`.cdx.json\`: SBOM of each image, from Syft, including the per-library SBOMs embedded in the image."
+            echo "- \`python-<version>[-shell]-<arch>.spdx.json\` / \`.cdx.json\`: SBOM of each image, from Syft, including the per-library SBOMs embedded in the image."
             echo "- \`*.openvex.json\`: VEX statements for CVEs that don't apply to these builds; pass them to Grype with \`--vex\`."
             echo "- \`SHA256SUMS\`: checksums of the assets above."
           } > notes.md

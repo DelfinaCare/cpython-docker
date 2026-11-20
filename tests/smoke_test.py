@@ -220,7 +220,7 @@ check("pip version", r.stdout.startswith(f"pip {env['PIP_VERSION']} "), r.stdout
 r = subprocess.run(["python", "-c", "print('hi')"], capture_output=True, text=True)
 check("`python` alias", r.stdout == "hi\n")
 
-# --- Shell: only in the -dbg image -------------------------------------------
+# --- Shell: only in the -shell image -------------------------------------------
 variant = env.get("RUNTIME_VARIANT", "release")
 if variant == "debug":
     r = subprocess.run(["sh", "-c", "echo hi"], capture_output=True, text=True)
