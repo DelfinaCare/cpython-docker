@@ -26,12 +26,12 @@ group "default" {
   targets = ["python"]
 }
 
-# Every version is built twice: the shell-less release image and a -shell image
-# on distroless's :debug base (same contents plus busybox).
+# Every version is built twice: the shell-less release image, and a -shell
+# image that is the release image plus one layer with busybox.
 variable "VARIANTS" {
   default = [
-    { name = "",       base = "release", suffix = "" },
-    { name = "-shell", base = "debug",   suffix = "-shell" },
+    { name = "",       variant = "release", target = "runtime",       suffix = "" },
+    { name = "-shell", variant = "shell",   target = "runtime-shell", suffix = "-shell" },
   ]
 }
 
@@ -39,12 +39,12 @@ target "python" {
   name      = "python-${replace(py.minor, ".", "_")}${v.name}"
   matrix    = { py = PYTHON_RELEASES, v = VARIANTS }
   context   = "."
-  target    = "runtime"
+  target    = v.target
   platforms = ["linux/amd64", "linux/arm64"]
   args = {
     PYTHON_VERSION = py.version
     PYTHON_SHA256  = py.sha256
-    RUNTIME_VARIANT = v.base
+    RUNTIME_VARIANT = v.variant
   }
   tags = ["${IMAGE}:${py.version}${v.suffix}", "${IMAGE}:${py.minor}${v.suffix}"]
   # Same layer compression as release.yml (applies with --push; --load
@@ -60,7 +60,7 @@ target "test" {
   args = {
     PYTHON_VERSION = py.version
     PYTHON_SHA256  = py.sha256
-    RUNTIME_VARIANT = v.base
+    RUNTIME_VARIANT = v.variant
   }
   output = ["type=cacheonly"]
 }

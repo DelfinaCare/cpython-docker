@@ -4,8 +4,8 @@
 # truth for CPython versions and platforms:
 #
 #   pythons=[{"minor":"3.14","version":"3.14.10","sha256":"..."}, ...]
-#   merges=[{"minor":"3.14","version":"3.14.10","variant":"debug","suffix":"-shell"}, ...]
-#   matrix={"include":[{<python fields>,"variant":"release"|"debug","suffix":""|"-shell",
+#   merges=[{"minor":"3.14","version":"3.14.10","variant":"shell","suffix":"-shell"}, ...]
+#   matrix={"include":[{<python fields>,"variant":"release"|"shell","suffix":""|"-shell",
 #                       "platform":"linux/amd64","arch":"amd64",
 #                       "runner":"ubuntu-24.04"}, ...]}
 #
@@ -30,7 +30,8 @@ matrix=$(jq -c --argjson pythons "$pythons" '
   | ([.target[].args.RUNTIME_VARIANT] | unique) as $variants
   | {include: [$pythons[] as $py | $variants[] as $v | $platforms[] as $p
       | $py + {variant: $v,
-               suffix: (if $v == "release" then "" else "-shell" end),
+               target: (if $v == "release" then "runtime" else "runtime-\($v)" end),
+               suffix: (if $v == "release" then "" else "-\($v)" end),
                platform: $p,
                arch: ($p | split("/")[1]),
                runner: ($runners[$p] // error("no runner for \($p)"))}]}' <<<"$bake")

@@ -262,8 +262,7 @@ Rules of thumb for each library:
   <https://nvd.nist.gov/products/cpe/search>), and add it to `EXPECTED` in
   `tests/check_metadata.py`.
 * **Base images**: `docker buildx imagetools inspect <image>` prints the
-  current index digest. Keep `BUILD_IMAGE`, `RUNTIME_IMAGE` and
-  `RUNTIME_DEBUG_IMAGE` (the `:debug` tag of the same distroless image) on the same
+  current index digest. Keep `BUILD_IMAGE` and `RUNTIME_IMAGE` on the same
   Debian release: the binaries are compiled against the build image's glibc,
   so the runtime image's glibc can't be older. (`base-nossl` without a
   suffix currently points at `base-nossl-debian13`; the explicit tag keeps
@@ -312,9 +311,10 @@ per-platform images into one multi-arch image and tags it:
 | `ghcr.io/<owner>/<repo>:3.14.10` | latest release of 3.14.10 (moves) |
 | `ghcr.io/<owner>/<repo>:3.14` | latest release of 3.14 (moves) |
 
-Each version is also published as a `-shell` image, built from the same
-Dockerfile on distroless's `:debug` base, so it is identical except that it
-has a busybox shell:
+Each version is also published as a `-shell` image (the `runtime-shell`
+target): the release image plus one layer with Debian's statically linked
+`busybox-static` (`/bin/sh` and the usual applets), with its dpkg record so
+scanners see it. Every other layer is shared with the release image:
 
 | Tag | Meaning |
 |-----|---------|
@@ -540,11 +540,10 @@ Rules for adding one:
 
 * There's no shell, so `docker run image sh` doesn't work, and neither
   does anything that calls `subprocess` with `shell=True` or `os.system()`.
-  Use the `-shell` image (`3.14-shell`, etc.) to inspect or debug: it is the same
-  image on distroless's `:debug` base, which adds busybox (`docker run -it
-  --entrypoint sh <image>-shell`). Don't use it in production; build it locally
-  with `docker buildx bake python-3_14-shell`, or with
-  `--build-arg RUNTIME_VARIANT=debug`.
+  Use the `-shell` image (`3.14-shell`, etc.) to inspect or debug: it is the
+  same image plus busybox (`docker run -it --entrypoint sh <image>-shell`).
+  Prefer the release image in production. Build it locally with
+  `docker buildx bake python-3_14-shell` (or `--target runtime-shell`).
 * manylinux wheels work. Tested by installing numpy and pyarrow, and
   raising a C++ exception through pyarrow. On plain `base-nossl`, both fail
   to import with `libstdc++.so.6: cannot open shared object file`.

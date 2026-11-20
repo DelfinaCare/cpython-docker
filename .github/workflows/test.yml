@@ -82,7 +82,7 @@ jobs:
         run: |
           {
             echo "from<<EOF"
-            jq -r --arg arch "$ARCH" '.[] | "type=gha,scope=\(.minor)-\($arch)-release", "type=gha,scope=\(.minor)-\($arch)-debug"' <<<"$PYTHONS"
+            jq -r --arg arch "$ARCH" '.[] | "type=gha,scope=\(.minor)-\($arch)-release", "type=gha,scope=\(.minor)-\($arch)-shell"' <<<"$PYTHONS"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 

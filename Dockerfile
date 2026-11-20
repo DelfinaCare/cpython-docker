@@ -25,12 +25,9 @@ ARG BUILD_IMAGE=debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601
 # RUNTIME_IMAGE: glibc + /etc basics, no shell, no OpenSSL. Bump the digest to
 # pick up glibc security fixes.
 ARG RUNTIME_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:3a2dbf10c2fdafe5865e2b03a4a3b9b23f2e280229a81730415379b76dc70592
-# RUNTIME_DEBUG_IMAGE: the same base plus a busybox shell (/busybox/sh) and
-# core utilities, for the -shell images. Keep it on the same Debian release as
-# RUNTIME_IMAGE.
-ARG RUNTIME_DEBUG_IMAGE=gcr.io/distroless/base-nossl-debian13:debug@sha256:2548abf86d3e319cdfd0184dce7417a61087724c94ca29daf9b4bddba677f5f5
-# RUNTIME_VARIANT: "release" (no shell) or "debug" (with a shell). Selects which
-# of the two bases the runtime stage is built on; everything else is identical.
+# RUNTIME_VARIANT: "release" (no shell) or "shell" (the release image plus one
+# layer with Debian's statically linked busybox). Only the test stage reads it;
+# the images themselves are the runtime and runtime-shell targets.
 ARG RUNTIME_VARIANT=release
 
 # ---- CPU baseline -----------------------------------------------------------
@@ -745,7 +742,7 @@ EOF
 # =============================================================================
 # runtime: the final image
 # =============================================================================
-# The release base has no shell, so this stage is COPY-only: everything is
+# The runtime base has no shell, so this stage is COPY-only: everything is
 # prepared in the build stages. Every COPY is its own layer and uses --link,
 # so a dependency bump only replaces that dependency's layer plus the CPython
 # and pip layers; all other layers are reused as-is (and stay cached in
@@ -754,9 +751,7 @@ EOF
 # Every library and extension module carries an rpath of /usr/local/lib, so
 # loading never depends on the ld.so.cache; the cache only exists for
 # ctypes.util.find_library().
-FROM ${RUNTIME_IMAGE} AS runtime-base-release
-FROM ${RUNTIME_DEBUG_IMAGE} AS runtime-base-debug
-FROM runtime-base-${RUNTIME_VARIANT} AS runtime
+FROM ${RUNTIME_IMAGE} AS runtime
 
 ENV LANG=C.UTF-8
 
@@ -819,9 +814,56 @@ CMD ["python3"]
 
 
 # =============================================================================
+# busybox: Debian's statically linked busybox, for the -shell images.
+#
+# Installed from the Debian archive into the build image (so it gets Debian's
+# security backports), then taken the same way as system-libs: the binary, its
+# dpkg record with md5sums, and its copyright file, so scanners see it as the
+# Debian package it is. Both images are merged-usr (/bin -> usr/bin), so
+# everything goes under /usr/bin: the binary, and one symlink per applet
+# (sh, ls, cat, vi, wget, ...).
+#
+# No links for login, mount and umount: vex/util-linux.openvex.json relies on
+# no such program being on the PATH, and check_metadata.py enforces it. (They
+# stay reachable as `busybox mount` etc.)
+# =============================================================================
+FROM ${BUILD_IMAGE} AS busybox
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=apt-lists,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends busybox-static
+RUN <<EOF
+set -eux
+pkg=busybox-static
+src=$(dpkg -L $pkg | grep -E '/busybox$' | head -n1)
+status=/out/var/lib/dpkg/status.d
+mkdir -p $status /out/usr/bin
+dpkg-query -s $pkg > $status/$pkg
+install -m755 "$src" /out/usr/bin/busybox
+echo "$(md5sum < "$src" | cut -d' ' -f1)  ${src#/}" > $status/$pkg.md5sums
+for applet in $(/out/usr/bin/busybox --list); do
+  case $applet in busybox|login|mount|umount) continue ;; esac
+  ln -s busybox /out/usr/bin/$applet
+done
+test -L /out/usr/bin/sh
+install -Dm644 "$(readlink -f /usr/share/doc/$pkg/copyright)" /out/usr/share/doc/$pkg/copyright
+EOF
+
+
+# =============================================================================
+# runtime-shell: the runtime image plus a shell (the -shell tags). Every layer
+# below this one is shared with the runtime image.
+# =============================================================================
+FROM runtime AS runtime-shell
+COPY --link --from=busybox /out/ /
+
+
+# =============================================================================
 # test: smoke tests against the runtime image (docker buildx bake test)
 # =============================================================================
-FROM runtime AS test
+FROM runtime AS runtime-release
+FROM runtime-${RUNTIME_VARIANT} AS test
 ARG PYTHON_VERSION
 ARG OPENSSL_VERSION
 ARG ZLIB_VERSION
