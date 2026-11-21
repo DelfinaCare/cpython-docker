@@ -25,6 +25,10 @@ ARG BUILD_IMAGE=debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601
 # RUNTIME_IMAGE: glibc + /etc basics, no shell, no OpenSSL. Bump the digest to
 # pick up glibc security fixes.
 ARG RUNTIME_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:3a2dbf10c2fdafe5865e2b03a4a3b9b23f2e280229a81730415379b76dc70592
+# RUNTIME_VARIANT: "release" (no shell) or "shell" (the release image plus one
+# layer with Debian's dash as /bin/sh). Only the test stage reads it;
+# the images themselves are the runtime and runtime-shell targets.
+ARG RUNTIME_VARIANT=release
 
 # ---- CPU baseline -----------------------------------------------------------
 # Extra compiler/linker flags for linux/amd64 only (arm64 builds use the
@@ -810,9 +814,42 @@ CMD ["python3"]
 
 
 # =============================================================================
+# shell: Debian's dash as /bin/sh, for the -shell images.
+#
+# dash is Essential in the build image, so it is already there and tracks
+# BUILD_IMAGE's digest, like system-libs. It links only against libc. Taken
+# the same way as system-libs: the binary, its dpkg record with md5sums for
+# only the file copied, and its copyright file. Both images are merged-usr
+# (/bin -> usr/bin), so /usr/bin/sh -> dash is also /bin/sh.
+# =============================================================================
+FROM ${BUILD_IMAGE} AS shell
+RUN <<EOF
+set -eux
+pkg=dash
+src=$(dpkg -L $pkg | grep -E '^(/usr)?/bin/dash$' | head -n1)
+status=/out/var/lib/dpkg/status.d
+mkdir -p $status /out/usr/bin
+dpkg-query -s $pkg > $status/$pkg
+install -m755 "$src" /out/usr/bin/dash
+echo "$(md5sum < "$src" | cut -d' ' -f1)  ${src#/}" > $status/$pkg.md5sums
+ln -s dash /out/usr/bin/sh
+install -Dm644 "$(readlink -f /usr/share/doc/$pkg/copyright)" /out/usr/share/doc/$pkg/copyright
+EOF
+
+
+# =============================================================================
+# runtime-shell: the runtime image plus a shell (the -shell tags). Every layer
+# below this one is shared with the runtime image.
+# =============================================================================
+FROM runtime AS runtime-shell
+COPY --link --from=shell /out/ /
+
+
+# =============================================================================
 # test: smoke tests against the runtime image (docker buildx bake test)
 # =============================================================================
-FROM runtime AS test
+FROM runtime AS runtime-release
+FROM runtime-${RUNTIME_VARIANT} AS test
 ARG PYTHON_VERSION
 ARG OPENSSL_VERSION
 ARG ZLIB_VERSION
@@ -832,6 +869,7 @@ ARG CACERT_DATE
 ARG X86_64_CFLAGS
 ARG X86_64_LDFLAGS
 ARG PYTHON_OPTIMIZE
+ARG RUNTIME_VARIANT
 COPY tests/ /tests/
 # Exec form: there is no /bin/sh in the runtime image.
 RUN ["python3", "-I", "/tests/check_libs.py"]

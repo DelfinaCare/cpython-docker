@@ -214,8 +214,12 @@ for name, comp in docs.items():
 print(f"CycloneDX SBOMs: {len(docs)} components")
 
 # --- dpkg records for files copied from the Debian build image ---------------
+# The -shell image (RUNTIME_VARIANT=shell) adds dash.
+debian_pkgs = ["libgcc-s1", "libstdc++6", "libc-bin"]
+if env.get("RUNTIME_VARIANT") == "shell":
+    debian_pkgs.append("dash")
 status_d = "/var/lib/dpkg/status.d"
-for pkg in ("libgcc-s1", "libstdc++6", "libc-bin"):
+for pkg in debian_pkgs:
     path = os.path.join(status_d, pkg)
     if not os.path.exists(path):
         fail(f"missing dpkg record {path}")
@@ -230,7 +234,7 @@ for pkg in ("libgcc-s1", "libstdc++6", "libc-bin"):
             _md5, rel = line.split(None, 1)
             if not os.path.exists("/" + rel.strip()):
                 fail(f"{pkg}.md5sums lists missing file /{rel.strip()}")
-print("dpkg records: libgcc-s1, libstdc++6, libc-bin")
+print(f"dpkg records: {', '.join(debian_pkgs)}")
 
 # --- License texts and source directions -------------------------------------
 # Most of these licenses require their text to accompany the binaries, and
@@ -266,7 +270,7 @@ if not shipped or not all(re.fullmatch(r"readline\d+-\d{3}", p) for p in shipped
     fail(f"{patches}: expected the applied readline patches, found {shipped}")
 if not os.path.isfile(os.path.join(lic_dir, "README")):
     fail(f"{lic_dir}/README missing")
-for pkg in ("libgcc-s1", "libstdc++6", "libc-bin"):
+for pkg in debian_pkgs:
     path = f"/usr/share/doc/{pkg}/copyright"
     if not os.path.isfile(path) or os.path.getsize(path) == 0:
         fail(f"{path} missing")

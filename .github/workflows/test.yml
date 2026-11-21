@@ -56,7 +56,7 @@ jobs:
 
   build:
     needs: plan
-    name: test ${{ matrix.version }} ${{ matrix.platform }}
+    name: test ${{ matrix.version }}${{ matrix.suffix }} ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -82,7 +82,7 @@ jobs:
         run: |
           {
             echo "from<<EOF"
-            jq -r --arg arch "$ARCH" '.[] | "type=gha,scope=\(.minor)-\($arch)"' <<<"$PYTHONS"
+            jq -r --arg arch "$ARCH" '.[] | "type=gha,scope=\(.minor)-\($arch)-release", "type=gha,scope=\(.minor)-\($arch)-shell"' <<<"$PYTHONS"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -97,6 +97,7 @@ jobs:
           build-args: |
             PYTHON_VERSION=${{ matrix.version }}
             PYTHON_SHA256=${{ matrix.sha256 }}
+            RUNTIME_VARIANT=${{ matrix.variant }}
           cache-from: ${{ steps.cache.outputs.from }}
-          cache-to: type=gha,scope=${{ matrix.minor }}-${{ matrix.arch }},mode=max,ignore-error=true
+          cache-to: type=gha,scope=${{ matrix.minor }}-${{ matrix.arch }}-${{ matrix.variant }},mode=max,ignore-error=true
           outputs: type=cacheonly
