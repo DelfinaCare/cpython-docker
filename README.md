@@ -273,7 +273,7 @@ Rules of thumb for each library:
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `.github/workflows/test.yml` | pull requests, pushes to `main` | `update-deps.py --verify-pins`, then builds and tests every CPython version on every platform, with aggressive caching |
-| `.github/workflows/release.yml` | pushing a `v*` tag | builds from scratch on native runners, pushes multi-arch images to GHCR, publishes a GitHub release with SBOMs |
+| `.github/workflows/release.yml` | Mondays 9:02 AM Pacific, or by hand on `main` | unless `main` is already released: builds from scratch on native runners, pushes multi-arch images to GHCR, publishes a GitHub release with SBOMs |
 | `.github/workflows/update-deps.yml` | daily, or by hand | runs the updater and opens a PR; refreshes the pinned signing keys in a separate PR |
 | `.github/dependabot.yml` | weekly | updates the actions used by the workflows |
 
@@ -284,16 +284,40 @@ version there adds it to CI and releases.
 
 ### Releasing
 
+The Release workflow runs every Monday at 9:02 AM Pacific time. To release
+sooner, run it on `main`: **Actions > Release > Run workflow**, or
+
 ```bash
-git tag v2026.10.29 && git push origin v2026.10.29
+gh workflow run release.yml --ref main
 ```
+
+Don't push tags by hand: a release's tag is created when the release is
+published. Every run does the same thing, so it's always safe to run it
+again, and a Monday with nothing new to release does nothing:
+
+1. If the commit already has a published release, it skips to `promote`
+   (below).
+2. It deletes the draft releases of earlier attempts that never published.
+   Drafts have no git tag, so no tag is ever deleted.
+3. It makes a draft release for the commit, named after the current date in
+   UTC: `v2026.10.29`. If that day already has a release it adds a suffix:
+   `v2026.10.29-1`, `v2026.10.29-2`, and so on.
+
+So to retry a failed release, run the workflow again. Only one release runs
+at a time.
+
+The repository should have **release immutability** turned on (Settings >
+General > Releases). Publishing then locks the release's tag and assets:
+the tag can't be moved or deleted, and its name can't be reused. The
+`release` job warns if a release it published isn't immutable.
 
 For each CPython version in `docker-bake.hcl`, and each platform, a job on a
 native runner (`ubuntu-24.04` for amd64, `ubuntu-24.04-arm` for arm64; no
 QEMU) does the following:
 
 1. Builds the runtime image with `--no-cache --pull` and no cache import, and
-   pushes it **by digest only**. It carries BuildKit provenance (`mode=max`)
+   pushes it **by digest only** to a staging package,
+   `ghcr.io/<owner>/<repo>-staging`. It carries BuildKit provenance (`mode=max`)
    and SBOM attestations.
 2. Builds the `-shell` image in the same job, on top of the layers step 1
    just built, and pushes it by digest too. It then checks that the `-shell`
@@ -306,11 +330,15 @@ QEMU) does the following:
    included).
 
 Once every platform of a version has passed, `merge` combines the
-per-platform images into one multi-arch image and tags it:
+per-platform images into one multi-arch image in the staging package,
+tagged with the release. Nothing reaches the real package until every
+image has passed: `release` copies them there, with the same digests, just
+before publishing. The tags that move are only moved by `promote`, once the
+GitHub release is published:
 
 | Tag | Meaning |
 |-----|---------|
-| `ghcr.io/<owner>/<repo>:3.14.10-2026.10.29` | this release; never reused, so safe to pin |
+| `ghcr.io/<owner>/<repo>:3.14.10-2026.10.29` | this release; never reused once the release is published (for an extra guarantee, pin the digest from the release notes) |
 | `ghcr.io/<owner>/<repo>:3.14.10` | latest release of 3.14.10 (moves) |
 | `ghcr.io/<owner>/<repo>:3.14` | latest release of 3.14 (moves) |
 
@@ -323,7 +351,7 @@ other layer is shared with the release image:
 
 | Tag | Meaning |
 |-----|---------|
-| `ghcr.io/<owner>/<repo>:3.14.10-shell-2026.10.29` | this release; never reused |
+| `ghcr.io/<owner>/<repo>:3.14.10-shell-2026.10.29` | this release; never reused once the release is published |
 | `ghcr.io/<owner>/<repo>:3.14.10-shell` | latest release of 3.14.10 (moves) |
 | `ghcr.io/<owner>/<repo>:3.14-shell` | latest release of 3.14 (moves) |
 
@@ -334,13 +362,22 @@ images; Debian's tracker has the current list:
 arrive when `BUILD_IMAGE` is bumped to a Debian image that contains them. If
 you need the smallest scan surface, use the release image, which has no shell.
 
-Finally, `release` collects every job's SBOMs, the `vex/` statements and a
-`SHA256SUMS` file. It creates the GitHub release **as a draft**, uploads
-everything, and only then publishes. That suits immutable releases, where a
-published release can't gain or change assets. The release notes list the
-image digests and every pinned version. If the workflow fails before
-publishing, re-running it replaces the leftover draft; a published release
-is never modified.
+Then `release` copies every image from staging to the real package under
+its release tag, checking each keeps its digest. It collects every job's
+SBOMs, the `vex/` statements and a `SHA256SUMS` file, uploads them to the
+draft release, and only then publishes it, which creates the tag at the commit that was built. Immutable
+releases need it in that order: a published release can't gain or change
+assets. The release notes list the image digests and every pinned version.
+A failed attempt's draft is deleted by the next run, which may reuse its
+name and overwrite its staging images. The staging package keeps every
+attempt's images; nothing uses them once a release is published, so old
+ones can be deleted. **Re-run failed jobs** also
+works: it fills the same draft.
+
+Finally, `promote` points `3.14.10` and `3.14` (and `3.14.10-shell` and
+`3.14-shell`) at the published release's images, keeping the same digest.
+It also runs when the commit was already released, so if it fails, the next
+run (at the latest, the next Monday) fixes it.
 
 ### PR caching
 
