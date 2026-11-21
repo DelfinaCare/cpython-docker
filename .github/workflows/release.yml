@@ -11,20 +11,23 @@
 #   plan     reads the CPython versions and platforms from docker-bake.hcl
 #   build    one job per CPython version x platform, each on a native runner
 #            (no QEMU): build the release image with no cache and the -shell
-#            image on top of it, push both by digest, test, SBOM
+#            image on top of it, push both by digest to the staging package,
+#            test, SBOM
 #   merge    one job per CPython version x variant: combine the per-platform
-#            images into one multi-arch image, tagged 3.14.10-<release> (or
-#            3.14.10-shell-<release>)
-#   release  fill the draft release with the SBOMs and publish it, which
-#            creates the git tag
+#            images into one multi-arch image in the staging package, tagged
+#            3.14.10-<release> (or 3.14.10-shell-<release>)
+#   release  copy every image from staging to the real package, fill the
+#            draft release with the SBOMs and publish it, which creates the
+#            git tag
 #   promote  move 3.14.10 and 3.14 (and their -shell tags) to the published
 #            release's images
 #
-# Nothing is tagged in the registry until every platform of a version has
-# built and passed its tests, and the tags that move only move once the
-# release is published. The release is filled while it's a draft and only
-# then published, as immutable releases require: publishing locks its tag
-# and assets.
+# Images are built into a staging package (<image>-staging) and only copied
+# to the real one, with the same digests, once every image has built and
+# passed its tests; the tags that move only move once the release is
+# published. The release is filled while it's a draft and only then
+# published, as immutable releases require: publishing locks its tag and
+# assets.
 name: Release
 
 on:
@@ -138,6 +141,7 @@ jobs:
       merges: ${{ steps.plan.outputs.merges }}
       builds: ${{ steps.plan.outputs.builds }}
       image: ${{ steps.image.outputs.image }}
+      staging: ${{ steps.image.outputs.staging }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -148,6 +152,7 @@ jobs:
         run: |
           # Registry names must be lowercase; owners often aren't.
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "staging=ghcr.io/${GITHUB_REPOSITORY,,}-staging" >> "$GITHUB_OUTPUT"
 
   build:
     needs: [prepare, plan]
@@ -160,8 +165,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.builds) }}
+    # Everything here is pushed to the staging package; `release` copies it
+    # to the real one once every image has passed.
     env:
-      IMAGE: ${{ needs.plan.outputs.image }}
+      STAGING: ${{ needs.plan.outputs.staging }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -176,8 +183,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # The release image is built from scratch: no-cache, and no cache
-      # import of any kind. It's pushed by digest only; tags come later, in
-      # `merge`, once every platform has passed its tests.
+      # import of any kind. It's pushed to staging by digest only.
       - name: Build and push release image by digest (no cache)
         id: push-release
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -200,7 +206,7 @@ jobs:
             org.opencontainers.image.description=CPython ${{ matrix.version }} and its C libraries built from source on distroless
           provenance: mode=max
           sbom: true
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.STAGING }},push-by-digest=true,name-canonical=true,push=true
 
       # The -shell image is the release image plus one layer with /bin/sh.
       # It's built in this job, without no-cache, so every layer below that
@@ -228,7 +234,7 @@ jobs:
             org.opencontainers.image.description=CPython ${{ matrix.version }} and its C libraries built from source on distroless, with /bin/sh (dash)
           provenance: mode=max
           sbom: true
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.STAGING }},push-by-digest=true,name-canonical=true,push=true
 
       # Fails the release if the -shell image isn't the release image plus
       # exactly one layer.
@@ -241,9 +247,9 @@ jobs:
           # The pushed digest is an index (image + attestation manifests);
           # take the image manifest for this platform and list its layers.
           layers() {
-            manifest=$(docker buildx imagetools inspect --raw "${IMAGE}@$1" | jq -r --arg p "$PLATFORM" '
+            manifest=$(docker buildx imagetools inspect --raw "${STAGING}@$1" | jq -r --arg p "$PLATFORM" '
               [.manifests[] | select(.platform.os + "/" + .platform.architecture == $p)][0].digest')
-            docker buildx imagetools inspect --raw "${IMAGE}@${manifest}" | jq -c '[.layers[].digest]'
+            docker buildx imagetools inspect --raw "${STAGING}@${manifest}" | jq -c '[.layers[].digest]'
           }
           release=$(layers "$RELEASE")
           shell=$(layers "$SHELL_IMAGE")
@@ -301,7 +307,7 @@ jobs:
         run: |
           mkdir -p sbom
           scan() {  # scan DIGEST OUTPUT-NAME
-            "$SYFT" scan "registry:${IMAGE}@$1" --platform "$PLATFORM" \
+            "$SYFT" scan "registry:${STAGING}@$1" --platform "$PLATFORM" \
               --select-catalogers +sbom-cataloger \
               -o "spdx-json=sbom/$2.spdx.json" \
               -o "cyclonedx-json=sbom/$2.cdx.json"
@@ -350,6 +356,7 @@ jobs:
         python: ${{ fromJSON(needs.plan.outputs.merges) }}
     env:
       IMAGE: ${{ needs.plan.outputs.image }}
+      STAGING: ${{ needs.plan.outputs.staging }}
       RELEASE: ${{ needs.prepare.outputs.release }}
       VERSION: ${{ matrix.python.version }}
       MINOR: ${{ matrix.python.minor }}
@@ -369,11 +376,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Only the release's own tag, 3.14.10-<release> (e.g.
-      # 3.14.10-2026.10.29); the shell variant (with /bin/sh) adds -shell to
-      # the version part: 3.14.10-shell-2026.10.29. The tags that move,
-      # 3.14.10 and 3.14 (and 3.14.10-shell, 3.14-shell), are only moved by
-      # `promote`, once the GitHub release is published.
+      # In the staging package, tagged with only the release's own tag,
+      # 3.14.10-<release> (e.g. 3.14.10-2026.10.29); the shell variant (with
+      # /bin/sh) adds -shell to the version part: 3.14.10-shell-2026.10.29.
+      # `release` copies it to the real package under the same tag, and
+      # `promote` moves 3.14.10 and 3.14 (and 3.14.10-shell, 3.14-shell).
       - name: Create multi-arch image and tag
         working-directory: digests
         env:
@@ -381,21 +388,23 @@ jobs:
         run: |
           sources=()
           for digest in *; do
-            sources+=("${IMAGE}@sha256:${digest}")
+            sources+=("${STAGING}@sha256:${digest}")
           done
           docker buildx imagetools create \
             --annotation "index:org.opencontainers.image.source=${SOURCE}" \
             --annotation "index:org.opencontainers.image.version=${VERSION}" \
-            -t "${IMAGE}:${VERSION}${SUFFIX}-${RELEASE}" \
+            -t "${STAGING}:${VERSION}${SUFFIX}-${RELEASE}" \
             "${sources[@]}"
 
+      # Records where the image will be in the real package: `release` copies
+      # it there with the same digest.
       - name: Record the multi-arch digest
         run: |
           mkdir -p ../index
-          digest=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}${SUFFIX}-${RELEASE}" \
+          digest=$(docker buildx imagetools inspect "${STAGING}:${VERSION}${SUFFIX}-${RELEASE}" \
                      --format '{{json .Manifest}}' | jq -r .digest)
           echo "${IMAGE}:${VERSION}${SUFFIX}-${RELEASE}@${digest}" > "../index/${MINOR}${SUFFIX}"
-          docker buildx imagetools inspect "${IMAGE}@${digest}"
+          docker buildx imagetools inspect "${STAGING}@${digest}"
         working-directory: digests
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -405,13 +414,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Collects every build's outputs and publishes them as one GitHub release.
+  # Copies every image to the real package and publishes every build's
+  # outputs as one GitHub release. Runs only once every image has passed.
   release:
-    needs: [prepare, merge]
+    needs: [prepare, plan, merge]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      packages: write
     env:
+      STAGING: ${{ needs.plan.outputs.staging }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.prepare.outputs.tag }}
@@ -462,6 +474,36 @@ jobs:
             echo "- \`SHA256SUMS\`: checksums of the assets above."
           } > notes.md
           cat notes.md
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each index/ file is "<image>:<version>[-shell]-<release>@<digest>",
+      # where the digest is the staging image's. With a single multi-arch
+      # source and no annotations, imagetools copies the index (and every
+      # image and attestation it lists) as is, so the digest stays the same,
+      # and the release notes are right; the loop checks that, and that
+      # every platform's image can be read from the real package.
+      - name: Copy the images from staging
+        run: |
+          for f in index/*; do
+            ref=$(cat "$f")
+            dst=${ref%@*}
+            digest=${ref##*@}
+            docker buildx imagetools create -t "$dst" "${STAGING}@${digest}"
+            got=$(docker buildx imagetools inspect "$dst" --format '{{json .Manifest}}' | jq -r .digest)
+            if [ "$got" != "$digest" ]; then
+              echo "::error::${dst} is ${got}, not ${digest}"
+              exit 1
+            fi
+            docker buildx imagetools inspect "$dst" --format '{{json .Image}}' > /dev/null
+            echo "${STAGING}@${digest} -> ${dst}"
+          done
 
       # Fill the draft `prepare` made, then publish it: an immutable release
       # can't gain assets after it's published. Publishing creates the git

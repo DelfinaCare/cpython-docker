@@ -316,7 +316,8 @@ native runner (`ubuntu-24.04` for amd64, `ubuntu-24.04-arm` for arm64; no
 QEMU) does the following:
 
 1. Builds the runtime image with `--no-cache --pull` and no cache import, and
-   pushes it **by digest only**. It carries BuildKit provenance (`mode=max`)
+   pushes it **by digest only** to a staging package,
+   `ghcr.io/<owner>/<repo>-staging`. It carries BuildKit provenance (`mode=max`)
    and SBOM attestations.
 2. Builds the `-shell` image in the same job, on top of the layers step 1
    just built, and pushes it by digest too. It then checks that the `-shell`
@@ -329,9 +330,11 @@ QEMU) does the following:
    included).
 
 Once every platform of a version has passed, `merge` combines the
-per-platform images into one multi-arch image, tagged with the release.
-The tags that move are only moved by `promote`, once the GitHub release is
-published:
+per-platform images into one multi-arch image in the staging package,
+tagged with the release. Nothing reaches the real package until every
+image has passed: `release` copies them there, with the same digests, just
+before publishing. The tags that move are only moved by `promote`, once the
+GitHub release is published:
 
 | Tag | Meaning |
 |-----|---------|
@@ -359,13 +362,16 @@ images; Debian's tracker has the current list:
 arrive when `BUILD_IMAGE` is bumped to a Debian image that contains them. If
 you need the smallest scan surface, use the release image, which has no shell.
 
-Then `release` collects every job's SBOMs, the `vex/` statements and a
-`SHA256SUMS` file, uploads them to the draft release, and only then
-publishes it, which creates the tag at the commit that was built. Immutable
+Then `release` copies every image from staging to the real package under
+its release tag, checking each keeps its digest. It collects every job's
+SBOMs, the `vex/` statements and a `SHA256SUMS` file, uploads them to the
+draft release, and only then publishes it, which creates the tag at the commit that was built. Immutable
 releases need it in that order: a published release can't gain or change
 assets. The release notes list the image digests and every pinned version.
 A failed attempt's draft is deleted by the next run, which may reuse its
-name and overwrite the images tagged with it. **Re-run failed jobs** also
+name and overwrite its staging images. The staging package keeps every
+attempt's images; nothing uses them once a release is published, so old
+ones can be deleted. **Re-run failed jobs** also
 works: it fills the same draft.
 
 Finally, `promote` points `3.14.10` and `3.14` (and `3.14.10-shell` and
