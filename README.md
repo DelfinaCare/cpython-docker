@@ -327,6 +327,13 @@ other layer is shared with the release image:
 | `ghcr.io/<owner>/<repo>:3.14.10-shell` | latest release of 3.14.10 (moves) |
 | `ghcr.io/<owner>/<repo>:3.14-shell` | latest release of 3.14 (moves) |
 
+The `-shell` images contain Debian's `dash` package, taken unchanged from the
+build image. It has its own CVEs, which scanners will report against these
+images; Debian's tracker has the current list:
+<https://security-tracker.debian.org/tracker/source-package/dash>. Fixes
+arrive when `BUILD_IMAGE` is bumped to a Debian image that contains them. If
+you need the smallest scan surface, use the release image, which has no shell.
+
 Finally, `release` collects every job's SBOMs, the `vex/` statements and a
 `SHA256SUMS` file. It creates the GitHub release **as a draft**, uploads
 everything, and only then publishes. That suits immutable releases, where a
