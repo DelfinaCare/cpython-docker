@@ -5,12 +5,17 @@
 #
 #   pythons=[{"minor":"3.14","version":"3.14.10","sha256":"..."}, ...]
 #   merges=[{"minor":"3.14","version":"3.14.10","variant":"shell","suffix":"-shell"}, ...]
+#   builds={"include":[{<python fields>,"platform":"linux/amd64","arch":"amd64",
+#                       "runner":"ubuntu-24.04"}, ...]}
 #   matrix={"include":[{<python fields>,"variant":"release"|"shell","suffix":""|"-shell",
 #                       "platform":"linux/amd64","arch":"amd64",
 #                       "runner":"ubuntu-24.04"}, ...]}
 #
 # Every CPython version is built as the shell-less release image and as the
 # -shell image (variants come from RUNTIME_VARIANT in the bake targets).
+# `matrix` has one entry per variant (the Test workflow); `builds` has one per
+# CPython version x platform (the Release workflow, which builds both variants
+# in one job so the -shell image reuses the release image's exact layers).
 #
 # Each platform builds natively on its own runner (no QEMU).
 set -euo pipefail
@@ -40,6 +45,11 @@ matrix=$(jq -c --argjson pythons "$pythons" '
 merges=$(jq -c '[.include | group_by([.minor, .variant])[] | .[0]
   | {minor, version, variant, suffix}]' <<<"$matrix")
 
+# One entry per CPython version x platform (both variants).
+builds=$(jq -c '{include: [.include[] | select(.variant == "release")
+  | del(.variant, .target, .suffix)]}' <<<"$matrix")
+
 echo "pythons=$pythons"
 echo "merges=$merges"
+echo "builds=$builds"
 echo "matrix=$matrix"

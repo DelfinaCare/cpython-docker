@@ -295,10 +295,13 @@ QEMU) does the following:
 1. Builds the runtime image with `--no-cache --pull` and no cache import, and
    pushes it **by digest only**. It carries BuildKit provenance (`mode=max`)
    and SBOM attestations.
-2. Runs the `test` stage on top of it. That reuses the layers step 1 just
-   built, in the same job, and nothing older, so it tests exactly what was
-   pushed.
-3. Generates SPDX and CycloneDX SBOMs of the pushed image with Syft
+2. Builds the `-shell` image in the same job, on top of the layers step 1
+   just built, and pushes it by digest too. It then checks that the `-shell`
+   image's layers are the release image's plus exactly one. (The build isn't
+   bit-for-bit reproducible, so a separate build would not share them.)
+3. Runs the `test` stage on top of each. That reuses the layers just built,
+   in the same job, and nothing older, so it tests exactly what was pushed.
+4. Generates SPDX and CycloneDX SBOMs of both pushed images with Syft
    (`+sbom-cataloger`, so the per-library SBOMs embedded in the image are
    included).
 
