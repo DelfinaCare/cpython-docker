@@ -295,10 +295,13 @@ QEMU) does the following:
 1. Builds the runtime image with `--no-cache --pull` and no cache import, and
    pushes it **by digest only**. It carries BuildKit provenance (`mode=max`)
    and SBOM attestations.
-2. Runs the `test` stage on top of it. That reuses the layers step 1 just
-   built, in the same job, and nothing older, so it tests exactly what was
-   pushed.
-3. Generates SPDX and CycloneDX SBOMs of the pushed image with Syft
+2. Builds the `-shell` image in the same job, on top of the layers step 1
+   just built, and pushes it by digest too. It then checks that the `-shell`
+   image's layers are the release image's plus exactly one. (The build isn't
+   bit-for-bit reproducible, so a separate build would not share them.)
+3. Runs the `test` stage on top of each. That reuses the layers just built,
+   in the same job, and nothing older, so it tests exactly what was pushed.
+4. Generates SPDX and CycloneDX SBOMs of both pushed images with Syft
    (`+sbom-cataloger`, so the per-library SBOMs embedded in the image are
    included).
 
@@ -310,6 +313,19 @@ per-platform images into one multi-arch image and tags it:
 | `ghcr.io/<owner>/<repo>:3.14.10-2026.10.29` | this release; never reused, so safe to pin |
 | `ghcr.io/<owner>/<repo>:3.14.10` | latest release of 3.14.10 (moves) |
 | `ghcr.io/<owner>/<repo>:3.14` | latest release of 3.14 (moves) |
+
+Each version is also published as a `-shell` image (the `runtime-shell`
+target): the release image plus one layer with Debian's `dash` as `/bin/sh`,
+taken from the build image with its dpkg record so scanners see it. dash
+needs only libc. It is just a shell: `cd`, `echo`, `test` and the other
+builtins work, but there is no `ls`, `cp`, `rm` or other coreutils. Every
+other layer is shared with the release image:
+
+| Tag | Meaning |
+|-----|---------|
+| `ghcr.io/<owner>/<repo>:3.14.10-shell-2026.10.29` | this release; never reused |
+| `ghcr.io/<owner>/<repo>:3.14.10-shell` | latest release of 3.14.10 (moves) |
+| `ghcr.io/<owner>/<repo>:3.14-shell` | latest release of 3.14 (moves) |
 
 Finally, `release` collects every job's SBOMs, the `vex/` statements and a
 `SHA256SUMS` file. It creates the GitHub release **as a draft**, uploads
@@ -529,7 +545,10 @@ Rules for adding one:
 
 * There's no shell, so `docker run image sh` doesn't work, and neither
   does anything that calls `subprocess` with `shell=True` or `os.system()`.
-  Use the `test` stage pattern, or a `debug` build stage, to inspect it.
+  Use the `-shell` image (`3.14-shell`, etc.) to inspect or debug: it is the
+  same image plus `/bin/sh` (`docker run -it --entrypoint sh <image>-shell`).
+  Prefer the release image in production. Build it locally with
+  `docker buildx bake python-3_14-shell` (or `--target runtime-shell`).
 * manylinux wheels work. Tested by installing numpy and pyarrow, and
   raising a C++ exception through pyarrow. On plain `base-nossl`, both fail
   to import with `libstdc++.so.6: cannot open shared object file`.
