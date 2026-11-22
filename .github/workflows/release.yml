@@ -508,7 +508,8 @@ jobs:
       # Fill the draft `prepare` made, then publish it: an immutable release
       # can't gain assets after it's published. Publishing creates the git
       # tag, at the commit this run built. Re-running this job replaces the
-      # draft's assets.
+      # draft's assets. Everything goes by the release's ID: `gh release`
+      # finds releases by tag, and a draft has no tag yet.
       - name: Publish release
         run: |
           api="repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"
@@ -517,7 +518,15 @@ jobs:
             exit 1
           fi
           gh api -X PATCH "$api" -F body=@notes.md > /dev/null
-          gh release upload "$TAG" dist/* --clobber
+          for asset in $(gh api --paginate "${api}/assets" --jq '.[].id'); do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset}"
+          done
+          for f in dist/*; do
+            gh api -X POST \
+              "https://uploads.github.com/${api}/assets?name=$(basename "$f")" \
+              -H "Content-Type: application/octet-stream" --input "$f" > /dev/null
+            echo "Uploaded $(basename "$f")"
+          done
           immutable=$(gh api -X PATCH "$api" -F draft=false -f make_latest=true --jq .immutable)
 
           sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq .sha)
