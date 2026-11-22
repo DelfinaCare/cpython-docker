@@ -710,6 +710,10 @@ RUN ln -s certs/ca-certificates.crt /out/etc/ssl/cert.pem && \
 # - ldconfig (statically linked) and Debian's ld.so.conf, which lists
 #   /usr/local/lib: ctypes.util.find_library() runs `/sbin/ldconfig -p`
 #   (directly, no shell) and reads the cache it prints.
+# - The compiled C.UTF-8 locale (/usr/lib/locale/C.utf8, also from libc-bin),
+#   which the runtime's LANG=C.UTF-8 names. glibc doesn't build it in, so
+#   without it setlocale(LC_ALL, "") fails and C code falls back to the
+#   ASCII "C" locale (Python itself copes, by switching to UTF-8 mode).
 #
 # Each package's dpkg record goes into /var/lib/dpkg/status.d/ (the layout
 # distroless uses), with md5sums for only the files copied, so Trivy, Syft
@@ -731,7 +735,8 @@ take() {  # take PACKAGE FILE...
 }
 take libgcc-s1 $(dpkg -L libgcc-s1 | grep -E '^/usr/lib/.*\.so\.[0-9.]+$')
 take libstdc++6 $(dpkg -L libstdc++6 | grep -E '^/usr/lib/.*\.so\.[0-9.]+$')
-take libc-bin /usr/sbin/ldconfig /etc/ld.so.conf /etc/ld.so.conf.d/libc.conf
+take libc-bin /usr/sbin/ldconfig /etc/ld.so.conf /etc/ld.so.conf.d/libc.conf \
+  $(dpkg -L libc-bin | grep '^/usr/lib/locale/C\.utf8/' | while read -r f; do [ -d "$f" ] || echo "$f"; done)
 # Their license texts, where distroless keeps them for its own packages.
 for pkg in libgcc-s1 libstdc++6 libc-bin; do
   install -Dm644 "$(readlink -f /usr/share/doc/$pkg/copyright)" /out/usr/share/doc/$pkg/copyright
