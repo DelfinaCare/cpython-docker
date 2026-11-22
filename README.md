@@ -274,6 +274,7 @@ Rules of thumb for each library:
 |----------|---------|--------------|
 | `.github/workflows/test.yml` | pull requests, pushes to `main` | `update-deps.py --verify-pins`, then builds and tests every CPython version on every platform, with aggressive caching |
 | `.github/workflows/release.yml` | Mondays 9:02 AM Pacific, or by hand on `main` | unless `main` is already released: builds from scratch on native runners, pushes multi-arch images to GHCR, publishes a GitHub release with SBOMs |
+| `.github/workflows/cleanup.yml` | Tuesdays 9:02 AM Pacific, or by hand (dry run by default) | deletes the images of failed release attempts once they're a week old |
 | `.github/workflows/update-deps.yml` | daily, or by hand | runs the updater and opens a PR; refreshes the pinned signing keys in a separate PR |
 | `.github/dependabot.yml` | weekly | updates the actions used by the workflows |
 
@@ -369,10 +370,17 @@ draft release, and only then publishes it, which creates the tag at the commit t
 releases need it in that order: a published release can't gain or change
 assets. The release notes list the image digests and every pinned version.
 A failed attempt's draft is deleted by the next run, which may reuse its
-name and overwrite its staging images. The staging package keeps every
-attempt's images; nothing uses them once a release is published, so old
-ones can be deleted. **Re-run failed jobs** also
+name and overwrite its staging images. **Re-run failed jobs** also
 works: it fills the same draft.
+
+The Cleanup workflow deletes a failed attempt's images every Tuesday, once
+they're a week old, so there's a week to inspect them first. It deletes
+every staging image older than a week (a published release's images are
+already in the real package), and real-package images whose only tags
+belong to a release that was never published, like `3.14.10-2026.11.21`
+when there's no `v2026.11.21`. Their platform images and attestations go
+too, unless a kept image still refers to them. Run by hand, it only lists
+what it would delete unless **Dry run** is unchecked.
 
 Finally, `promote` points `3.14.10` and `3.14` (and `3.14.10-shell` and
 `3.14-shell`) at the published release's images, keeping the same digest.
