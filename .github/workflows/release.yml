@@ -74,14 +74,17 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           pattern='^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}(-[0-9]+)?$'
-          # Every release, newest first: "<id> <tag> <draft>".
+          # Every release, newest first: "<id> <draft> <tag> <title>". GitHub
+          # doesn't keep a draft's tag name (it shows "untagged-..." until
+          # it's published with a tag), so drafts are known by their title,
+          # which is the name this job gave them.
           releases=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
-                       --jq '.[] | "\(.id) \(.tag_name) \(.draft)"')
+                       --jq '.[] | "\(.id) \(.draft) \(.tag_name) \(.name)"')
 
           # Already released? Every run releases the default branch's latest
           # commit, so only the newest published release can be at it.
           latest=
-          while read -r id t draft; do
+          while read -r id draft t title; do
             if [ "$draft" = false ] && [[ $t =~ $pattern ]]; then latest=$t; break; fi
           done <<<"$releases"
           if [ -n "$latest" ] &&
@@ -96,9 +99,9 @@ jobs:
           fi
 
           # Earlier attempts that never published. A draft has no git tag.
-          while read -r id t draft; do
-            if [ "$draft" = true ] && [[ $t =~ $pattern ]]; then
-              echo "Deleting draft release ${t}, a failed attempt"
+          while read -r id draft t title; do
+            if [ "$draft" = true ] && [[ $title =~ $pattern ]]; then
+              echo "Deleting draft release ${title}, a failed attempt"
               gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
             fi
           done <<<"$releases"
@@ -527,9 +530,16 @@ jobs:
               -H "Content-Type: application/octet-stream" --input "$f" > /dev/null
             echo "Uploaded $(basename "$f")"
           done
-          immutable=$(gh api -X PATCH "$api" -F draft=false -f make_latest=true --jq .immutable)
+          # The tag name and commit are given again here: GitHub doesn't keep
+          # a draft's tag name, and would otherwise publish it with an
+          # "untagged-..." tag.
+          immutable=$(gh api -X PATCH "$api" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
+                        -F draft=false -f make_latest=true --jq .immutable)
 
-          sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq .sha)
+          for attempt in 1 2 3 4 5; do
+            sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq .sha) && break
+            sleep $((attempt * 2))
+          done
           if [ "$sha" != "$GITHUB_SHA" ]; then
             echo "::error::tag ${TAG} is at ${sha}, not ${GITHUB_SHA}"
             exit 1
