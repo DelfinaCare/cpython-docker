@@ -1,0 +1,56 @@
+# Deletes the images of failed release attempts once they're a week old, so
+# a failed build can still be inspected for a week first. Runs every Tuesday
+# morning, or by hand (Actions > Cleanup > Run workflow), which only lists
+# what it would delete unless "Dry run" is unchecked.
+#
+# It deletes, from the staging package, every image older than a week (a
+# published release's images were already copied to the real package), and
+# from the real package, images whose only tags are release tags of a release
+# that was never published (e.g. 3.14.10-2026.11.21 without v2026.11.21).
+# Platform images and attestations go with them unless a kept image still
+# refers to them. See .github/scripts/cleanup.sh.
+name: Cleanup
+
+on:
+  schedule:
+    - cron: "2 9 * * 2"
+      timezone: America/Los_Angeles
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run (only list what would be deleted)
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete failed releases' images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Scheduled runs have no inputs, so they delete.
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          DAYS: 7
+        run: .github/scripts/cleanup.sh
