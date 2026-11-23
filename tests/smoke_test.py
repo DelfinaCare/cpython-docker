@@ -182,6 +182,16 @@ with tempfile.TemporaryDirectory() as d:
             db[b"k"] = b"v"
             check(f"{m.__name__}", db[b"k"] == b"v")
 
+# LANG=C.UTF-8 needs /usr/lib/locale/C.utf8; without it setlocale() fails and
+# C code (readline, curses, strcoll, ...) silently runs in the ASCII C locale.
+import locale  # noqa: E402
+check("LANG=C.UTF-8", env.get("LANG") == "C.UTF-8", env.get("LANG"))
+try:
+    check("C.UTF-8 locale installed", locale.setlocale(locale.LC_ALL, "C.UTF-8") == "C.UTF-8")
+except locale.Error as e:
+    check("C.UTF-8 locale installed", False, e)
+check("preferred encoding utf-8", locale.getpreferredencoding(False).lower() == "utf-8")
+
 import _uuid  # noqa: E402
 check("uuid (libuuid)", uuid.uuid1().version == 1 and len(_uuid.generate_time_safe()[0]) == 16)
 

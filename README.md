@@ -55,7 +55,7 @@ node).
 | pip       | `PIP_*`                      | installed from the upstream wheel|
 | CA certs  | `CACERT_*`                   | Mozilla bundle from curl.se      |
 | Runtime base | `RUNTIME_IMAGE` (digest-pinned) | glibc (distroless)        |
-| Build base   | `BUILD_IMAGE` (digest-pinned)   | compiler toolchain; also the source of `libgcc_s`, `libstdc++` and `ldconfig` (see below) |
+| Build base   | `BUILD_IMAGE` (digest-pinned)   | compiler toolchain; also the source of `libgcc_s`, `libstdc++`, `ldconfig` and the `C.UTF-8` locale (see below) |
 
 `PYTHON_VERSION` / `PYTHON_SHA256` select the CPython release.
 
@@ -76,7 +76,7 @@ Notes:
 * Everything is linked with an rpath of `/usr/local/lib`, so library
   loading never depends on the linker cache. `tests/check_libs.py` enforces
   this.
-* Three things are copied unchanged from the Debian build image, because
+* Four things are copied unchanged from the Debian build image, because
   distroless `base-nossl` doesn't have them:
   * `libgcc_s.so.1` and `libstdc++.so.6`. The manylinux policy treats both
     as system libraries that wheels link against but must not bundle, so
@@ -86,6 +86,10 @@ Notes:
     `RUN ["/sbin/ldconfig"]`, builds `/etc/ld.so.cache`.
     `ctypes.util.find_library()` runs `/sbin/ldconfig -p` directly, not
     through a shell, so this is all it needs.
+  * The compiled `C.UTF-8` locale (`/usr/lib/locale/C.utf8`, also part of
+    `libc-bin`), which the image's `LANG=C.UTF-8` refers to. glibc doesn't
+    build it in, so without it `setlocale()` fails and C code (readline,
+    curses, `strcoll`, ...) runs in the ASCII `C` locale.
 
   These have no version `ARG`s of their own; they're updated by bumping the
   `BUILD_IMAGE` digest.
