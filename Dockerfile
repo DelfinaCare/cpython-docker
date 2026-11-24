@@ -18,10 +18,13 @@
 # ---- Base images ------------------------------------------------------------
 # Both pinned by multi-arch index digest. They must be the same Debian release:
 # everything is compiled against the build image's glibc and runs on the
-# runtime image's glibc, so the runtime's glibc can't be older.
+# runtime image's glibc, so the runtime's glibc can't be older. They must also
+# carry the same Debian glibc build: libc-bin (system-libs, below) comes from
+# BUILD_IMAGE but libc6 from RUNTIME_IMAGE, and tests/check_metadata.py fails
+# if their versions differ.
 #
 # BUILD_IMAGE: toolchain only, never shipped.
-ARG BUILD_IMAGE=debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+ARG BUILD_IMAGE=debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
 # RUNTIME_IMAGE: glibc + /etc basics, no shell, no OpenSSL. Bump the digest to
 # pick up glibc security fixes.
 ARG RUNTIME_IMAGE=gcr.io/distroless/base-nossl-debian13@sha256:f21fdfe4ede467d9ea8a6caaec1f8381ea4502243a3e8bb1c43df80c6fbaaeae

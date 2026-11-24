@@ -219,14 +219,20 @@ debian_pkgs = ["libgcc-s1", "libstdc++6", "libc-bin"]
 if env.get("RUNTIME_VARIANT") == "shell":
     debian_pkgs.append("dash")
 status_d = "/var/lib/dpkg/status.d"
+
+
+def dpkg_record(path):
+    with open(path) as f:
+        return dict(line.split(": ", 1) for line in f.read().splitlines()
+                    if ": " in line and not line.startswith(" "))
+
+
 for pkg in debian_pkgs:
     path = os.path.join(status_d, pkg)
     if not os.path.exists(path):
         fail(f"missing dpkg record {path}")
         continue
-    with open(path) as f:
-        fields = dict(line.split(": ", 1) for line in f.read().splitlines()
-                      if ": " in line and not line.startswith(" "))
+    fields = dpkg_record(path)
     if fields.get("Package") != pkg or "installed" not in fields.get("Status", ""):
         fail(f"bad dpkg record {path}: {fields.get('Package')} {fields.get('Status')}")
     with open(path + ".md5sums") as f:
@@ -235,6 +241,29 @@ for pkg in debian_pkgs:
             if not os.path.exists("/" + rel.strip()):
                 fail(f"{pkg}.md5sums lists missing file /{rel.strip()}")
 print(f"dpkg records: {', '.join(debian_pkgs)}")
+
+# --- One glibc version ---------------------------------------------------------
+# libc6 comes from RUNTIME_IMAGE; libc-bin (ldconfig, the C.UTF-8 locale) is
+# copied from BUILD_IMAGE. If the two digests carry different Debian glibc
+# builds, the image ships pieces of both and scanners flag the older one, so
+# every package built from the glibc source must match the runtime's libc6.
+glibc = {}
+for name in sorted(os.listdir(status_d)):
+    if name.endswith(".md5sums"):
+        continue
+    fields = dpkg_record(os.path.join(status_d, name))
+    source = fields.get("Source", fields.get("Package", "")).split()[0]
+    if source == "glibc":
+        glibc[fields["Package"]] = fields["Version"]
+libc6 = glibc.get("libc6")
+if libc6 is None:
+    fail(f"no libc6 dpkg record in {status_d}")
+else:
+    for pkg, version in glibc.items():
+        if version != libc6:
+            fail(f"glibc version skew: {pkg} {version} != libc6 {libc6} "
+                 f"(bump BUILD_IMAGE to a digest with glibc {libc6})")
+print(f"glibc: {', '.join(f'{p} {v}' for p, v in glibc.items())}")
 
 # --- License texts and source directions -------------------------------------
 # Most of these licenses require their text to accompany the binaries, and
