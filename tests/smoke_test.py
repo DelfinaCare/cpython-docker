@@ -150,11 +150,11 @@ for mod in ("zlib", "gzip", "bz2", "lzma", "compression.zstd"):
     m = importlib.import_module(mod)
     check(f"{mod} roundtrip", m.decompress(m.compress(data)) == data)
 
-# zlib is built with --solo; the VEX statements in vex/ depend on the gz* API
-# really being absent from libz.so.1.
+# zlib is the full build: other things linking libz.so.1 (e.g. manylinux
+# wheels using the system libz) may need the gz* and compress() API.
 libz = ctypes.CDLL("/usr/local/lib/libz.so.1")
-check("zlib built --solo (no gz* API)",
-      not any(hasattr(libz, f) for f in ("gzopen", "gzwrite", "gzread", "compress", "uncompress")))
+check("zlib full build (gz* API present)",
+      all(hasattr(libz, f) for f in ("gzopen", "gzwrite", "gzread", "compress", "uncompress")))
 c = zlib.compressobj()
 head = c.compress(data)
 check("zlib compressobj.copy (HAVE_ZLIB_COPY)", zlib.decompress(head + c.copy().flush()) == data)

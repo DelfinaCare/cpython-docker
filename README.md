@@ -62,13 +62,10 @@ node).
 Notes:
 
 * OpenSSL is the 3.5 LTS line (supported until 2030).
-* zlib is built with `--solo`, which leaves out its `gz*` file API,
-  `compress()`/`uncompress()` and its default allocator. CPython uses none
-  of them: it only uses the stream API, with its own allocator, and its
-  `gzip` module is pure Python. Less code shipped means fewer CVEs that
-  apply; see [VEX](#vex-cves-that-dont-apply). The catch: anything else
-  that links this `libz.so.1` and expects the full API would fail to load.
-  Wheels are unaffected, since manylinux wheels bundle their own zlib.
+* zlib is the full build, including its `gz*` file API and
+  `compress()`/`uncompress()`, so anything else that links this
+  `libz.so.1` (such as a manylinux wheel, which PEP 600 allows to use the
+  system libz) gets the complete API.
 * Only the shared libraries go into the final image. No headers, static
   libraries or CLI tools from the dependencies are included. CPython's own
   headers and `python3-config` are kept so a C compiler is the only thing
@@ -538,8 +535,7 @@ What each tool gets:
 
   ```bash
   syft scan <image> --select-catalogers +sbom-cataloger -o syft-json > sbom.json
-  grype sbom:sbom.json --vex vex/zlib.openvex.json --vex vex/util-linux.openvex.json \
-      --vex vex/sqlite.openvex.json
+  grype sbom:sbom.json --vex vex/util-linux.openvex.json --vex vex/sqlite.openvex.json
   ```
 
   Every library is matched on its exact NVD CPE. Each source-built library
@@ -573,7 +569,6 @@ as "suppressed by VEX" with `--show-suppressed`.
 
 | File | CVE | Why it doesn't apply |
 |------|-----|----------------------|
-| `vex/zlib.openvex.json` | CVE-2026-85091 (`gz_vacate()` heap overflow) | zlib is built `--solo`; `gzwrite.c` isn't compiled in |
 | `vex/util-linux.openvex.json` | CVE-2026-3184 (`login -h` hostname canonicalization) | only libuuid is built from util-linux; `login` is neither compiled nor shipped |
 | `vex/util-linux.openvex.json` | CVE-2026-53613 (restricted `mount` target race, legacy `mount(2)` path) | only libuuid is built from util-linux; neither `mount`/`umount` nor libmount is compiled or shipped, and the base image has none |
 | `vex/sqlite.openvex.json` | CVE-2026-119586 (`.recover` output in the `sqlite3` shell carries injected dot-commands) | only `libsqlite3.so.0` is shipped; the `sqlite3` shell is not, and the library doesn't contain the recover extension |
@@ -581,18 +576,16 @@ as "suppressed by VEX" with `--show-suppressed`.
 Rules for adding one:
 
 * Only use `not_affected` when something in this repo guarantees it, and
-  add a test that fails if that ever stops being true. For zlib,
-  `tests/smoke_test.py` checks that `libz.so.1` exports no `gz*` symbols.
-  For util-linux, the build stage fails if it compiles anything other than
-  libuuid, and `tests/check_metadata.py` checks that libuuid is the only
+  add a test that fails if that ever stops being true. For util-linux,
+  the build stage fails if it compiles anything other than libuuid, and `tests/check_metadata.py` checks that libuuid is the only
   file it ships and that no `login`, `mount`, `umount` or libmount exists
   anywhere in the image. For SQLite, `tests/check_metadata.py` checks that
   `libsqlite3.so.*` is the only file it ships, that no `sqlite3` executable
   exists, and that the library exports no `sqlite3_recover_*` symbols.
 * Use the component's purl without a version as the product
-  (`pkg:generic/zlib`), so the statement survives version bumps. Grype
+  (`pkg:generic/sqlite`), so the statement survives version bumps. Grype
   matches it against both the ELF-note and SBOM entries. Grype didn't match
-  a statement with the image as the product and zlib nested under it,
+  a statement with the image as the product and the library nested under it,
   because that depends on the image's exact name.
 * Trivy also takes `--vex`, but it doesn't see the libraries built here, so
   this only matters there for statements about Debian packages.

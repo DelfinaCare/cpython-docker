@@ -284,13 +284,12 @@ set -eux
 # Upstream builds with -O3, but setting CFLAGS replaces its default.
 export CFLAGS="$(echo "$CFLAGS" | sed 's/-O2/-O3/')"
 tar -xf /tmp/src.tar.gz --strip-components=1
-# --solo (Z_SOLO) leaves out the gz* file API (gzread.c, gzwrite.c, ...),
-# compress()/uncompress(), and zlib's default allocator. CPython uses none of
-# them: it only uses the deflate/inflate stream API, with its own allocator,
-# and its gzip module is pure Python. See vex/ for the CVEs this rules out.
-./configure --prefix=/usr/local --shared --solo
+# Full build (not --solo): libz.so.1 is shared with anything else in the
+# image or installed later, and PEP 600 lets manylinux wheels link against
+# the system libz with its complete API.
+./configure --prefix=/usr/local --shared
 # Build only the library: the default target also links the example and
-# minigzip programs, which need the gz* API.
+# minigzip programs, which aren't shipped.
 make -j"$(nproc)" libz.a libz.so.${ZLIB_VERSION}
 make DESTDIR=/out install
 split-runtime
