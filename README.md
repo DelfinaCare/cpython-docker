@@ -265,7 +265,14 @@ Rules of thumb for each library:
 * **Base images**: `docker buildx imagetools inspect <image>` prints the
   current index digest. Keep `BUILD_IMAGE` and `RUNTIME_IMAGE` on the same
   Debian release: the binaries are compiled against the build image's glibc,
-  so the runtime image's glibc can't be older. (`base-nossl` without a
+  so the runtime image's glibc can't be older. Beyond that, both digests
+  must carry the same Debian glibc build: `libc6` comes from `RUNTIME_IMAGE`
+  but `libc-bin` (ldconfig, the C.UTF-8 locale) comes from `BUILD_IMAGE`,
+  and `tests/check_metadata.py` fails if their versions differ. distroless
+  rebuilds as soon as Debian publishes a glibc fix, while `debian:trixie-slim`
+  can take days to follow, so an update that moves only `RUNTIME_IMAGE` past
+  a glibc fix fails CI until a `BUILD_IMAGE` digest with the same glibc
+  exists. (`base-nossl` without a
   suffix currently points at `base-nossl-debian13`; the explicit tag keeps
   it from silently moving to a new release.)
 
@@ -506,7 +513,9 @@ The `test` stage runs on top of the runtime image:
 * `tests/check_metadata.py` checks that every ELF file under `/usr/local`
   carries a package note at the pinned version, that there's one SBOM file
   per component with matching versions, and that the copied Debian files
-  have dpkg records (see "Scanning and SBOMs"). On x86_64 it also checks
+  have dpkg records (see "Scanning and SBOMs"), with every package built
+  from Debian's `glibc` source at the runtime's `libc6` version. On x86_64
+  it also checks
   that every one of those files carries the ISA marker from
   `X86_64_LDFLAGS`, which catches any build system that ignores `LDFLAGS`.
 
